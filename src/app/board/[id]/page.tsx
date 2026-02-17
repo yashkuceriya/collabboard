@@ -286,8 +286,16 @@ export default function BoardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-950">
-        <p className="text-gray-500 dark:text-gray-400">Loading board...</p>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg animate-pulse">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="3" />
+              <path d="M9 8h6M8 12h8M9 16h6" />
+            </svg>
+          </div>
+          <p className="text-sm text-gray-400 dark:text-gray-500">Loading board...</p>
+        </div>
       </div>
     );
   }
@@ -311,9 +319,12 @@ export default function BoardPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.push("/dashboard")}
-            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-100 transition-colors rounded-lg px-2 py-1 -ml-1"
+            className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-100 transition-colors rounded-lg px-2 py-1 -ml-1 hover:bg-gray-100 dark:hover:bg-gray-800"
           >
-            ← Boards
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 12L6 8l4-4" />
+            </svg>
+            Boards
           </button>
           <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
           {editingName ? (

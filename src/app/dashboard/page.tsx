@@ -14,6 +14,7 @@ export default function DashboardPage() {
   const [createError, setCreateError] = useState("");
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -54,6 +55,13 @@ export default function DashboardPage() {
     }
   }
 
+  async function deleteBoard(id: string) {
+    await supabase.from("board_elements").delete().eq("board_id", id);
+    await supabase.from("boards").delete().eq("id", id);
+    setBoards((prev) => prev.filter((b) => b.id !== id));
+    setDeletingBoardId(null);
+  }
+
   async function renameBoard(id: string, name: string) {
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -69,8 +77,16 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
-        <p className="text-gray-500 dark:text-gray-400">Loading...</p>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-blue-50/30 dark:from-gray-950 dark:to-gray-900">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg animate-pulse">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="3" />
+              <path d="M9 8h6M8 12h8M9 16h6" />
+            </svg>
+          </div>
+          <p className="text-sm text-gray-400 dark:text-gray-500">Loading...</p>
+        </div>
       </div>
     );
   }
@@ -165,20 +181,37 @@ export default function DashboardPage() {
                           <path d="M6 5h4M5 8h6M6 11h4" />
                         </svg>
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingBoardId(board.id);
-                          setEditName(board.name);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
-                        title="Rename board"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
-                          <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" />
-                        </svg>
-                      </button>
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingBoardId(board.id);
+                            setEditName(board.name);
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+                          title="Rename board"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
+                            <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" />
+                          </svg>
+                        </button>
+                        {board.owner_id === user?.id && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeletingBoardId(board.id);
+                            }}
+                            className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 transition-all"
+                            title="Delete board"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400 hover:text-red-500">
+                              <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M12.67 4v9.33a1.33 1.33 0 01-1.34 1.34H4.67a1.33 1.33 0 01-1.34-1.34V4" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
                     </div>
                     {editingBoardId === board.id ? (
                       <input
@@ -207,6 +240,35 @@ export default function DashboardPage() {
           </div>
         )}
       </main>
+
+      {/* Delete confirmation dialog */}
+      {deletingBoardId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setDeletingBoardId(null)}>
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-6 max-w-sm mx-4 w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="w-12 h-12 rounded-full bg-red-50 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-4">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-red-500">
+                <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 text-center mb-1">Delete board?</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-6">This will permanently delete the board and all its elements. This cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeletingBoardId(null)}
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteBoard(deletingBoardId)}
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-xl transition-colors shadow-sm"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

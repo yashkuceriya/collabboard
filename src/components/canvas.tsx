@@ -160,6 +160,19 @@ function getElementTextColor(el: BoardElement, isDark: boolean): string {
   return isDark ? "#f3f4f6" : "#1a1a1a";
 }
 
+type FontSizeKey = "small" | "medium" | "large";
+const FONT_SIZE_MAP: Record<FontSizeKey, { canvas: number; lineHeight: number }> = {
+  small: { canvas: 12, lineHeight: 16 },
+  medium: { canvas: 14, lineHeight: 20 },
+  large: { canvas: 18, lineHeight: 24 },
+};
+
+function getElementFontSize(el: BoardElement): { canvas: number; lineHeight: number } {
+  const props = el.properties as Record<string, string> | undefined;
+  const key = (props?.fontSize || "medium") as FontSizeKey;
+  return FONT_SIZE_MAP[key] || FONT_SIZE_MAP.medium;
+}
+
 export function Canvas({
   elements,
   viewport,
@@ -268,10 +281,8 @@ export function Canvas({
 
     // Clear
     ctx.clearRect(0, 0, rect.width, rect.height);
-    if (isDark) {
-      ctx.fillStyle = "#030712";
-      ctx.fillRect(0, 0, rect.width, rect.height);
-    }
+    ctx.fillStyle = isDark ? "#030712" : "#fafafa";
+    ctx.fillRect(0, 0, rect.width, rect.height);
 
     // Draw grid
     ctx.save();
@@ -284,32 +295,15 @@ export function Canvas({
     const endX = startX + (rect.width / viewport.zoom) + gridSize * 2;
     const endY = startY + (rect.height / viewport.zoom) + gridSize * 2;
 
-    if (isDark) {
-      // Dark mode: subtle dot grid at intersections
-      ctx.fillStyle = "#4b5563";
-      const dotRadius = 1.2 / viewport.zoom;
-      for (let x = startX; x < endX; x += gridSize) {
-        for (let y = startY; y < endY; y += gridSize) {
+    {
+      ctx.fillStyle = isDark ? "#374151" : "#d1d5db";
+      const dotRadius = (isDark ? 1.2 : 1) / viewport.zoom;
+      for (let gx = startX; gx < endX; gx += gridSize) {
+        for (let gy = startY; gy < endY; gy += gridSize) {
           ctx.beginPath();
-          ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+          ctx.arc(gx, gy, dotRadius, 0, Math.PI * 2);
           ctx.fill();
         }
-      }
-    } else {
-      // Light mode: soft lines
-      ctx.strokeStyle = "#e5e7eb";
-      ctx.lineWidth = 1 / viewport.zoom;
-      for (let x = startX; x < endX; x += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(x, startY);
-        ctx.lineTo(x, endY);
-        ctx.stroke();
-      }
-      for (let y = startY; y < endY; y += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(startX, y);
-        ctx.lineTo(endX, y);
-        ctx.stroke();
       }
     }
 
@@ -340,11 +334,12 @@ export function Canvas({
         ctx.roundRect(x, y, width, height, 8);
         ctx.stroke();
 
+        const stickyFont = getElementFontSize(el);
         ctx.fillStyle = getElementTextColor(el, isDark);
-        ctx.font = `${Math.max(13, 14)}px -apple-system, BlinkMacSystemFont, sans-serif`;
+        ctx.font = `${stickyFont.canvas}px -apple-system, BlinkMacSystemFont, sans-serif`;
         const lines = wrapText(ctx, el.text, width - 20);
         lines.forEach((line, i) => {
-          ctx.fillText(line, x + 10, y + 26 + i * 20);
+          ctx.fillText(line, x + 10, y + 10 + stickyFont.canvas + i * stickyFont.lineHeight);
         });
       } else if (el.type === "rectangle") {
         ctx.fillStyle = el.color + "22";
@@ -355,11 +350,12 @@ export function Canvas({
         ctx.fill();
         ctx.stroke();
         if (el.text) {
+          const rectFont = getElementFontSize(el);
           ctx.fillStyle = getElementTextColor(el, isDark);
-          ctx.font = "13px -apple-system, BlinkMacSystemFont, sans-serif";
+          ctx.font = `${rectFont.canvas}px -apple-system, BlinkMacSystemFont, sans-serif`;
           const lines = wrapText(ctx, el.text, width - 14);
           lines.forEach((line, i) => {
-            ctx.fillText(line, x + 7, y + 18 + i * 16);
+            ctx.fillText(line, x + 7, y + 8 + rectFont.canvas + i * rectFont.lineHeight);
           });
         }
       } else if (el.type === "circle") {
@@ -375,14 +371,14 @@ export function Canvas({
         ctx.fill();
         ctx.stroke();
         if (el.text) {
+          const circFont = getElementFontSize(el);
           ctx.fillStyle = getElementTextColor(el, isDark);
-          ctx.font = "12px -apple-system, BlinkMacSystemFont, sans-serif";
+          ctx.font = `${circFont.canvas}px -apple-system, BlinkMacSystemFont, sans-serif`;
           const lines = wrapText(ctx, el.text, width - 12);
-          const lineHeight = 14;
-          const startY = cy - (lines.length * lineHeight) / 2 + lineHeight / 2;
+          const startY = cy - (lines.length * circFont.lineHeight) / 2 + circFont.lineHeight / 2;
           lines.forEach((line, i) => {
             const tw = ctx.measureText(line).width;
-            ctx.fillText(line, cx - tw / 2, startY + i * lineHeight);
+            ctx.fillText(line, cx - tw / 2, startY + i * circFont.lineHeight);
           });
         }
       } else if (el.type === "text") {
@@ -394,11 +390,12 @@ export function Canvas({
         ctx.roundRect(x, y, width, height, r);
         ctx.fill();
         ctx.stroke();
+        const textFont = getElementFontSize(el);
         ctx.fillStyle = getElementTextColor(el, isDark);
-        ctx.font = "14px -apple-system, BlinkMacSystemFont, sans-serif";
+        ctx.font = `${textFont.canvas}px -apple-system, BlinkMacSystemFont, sans-serif`;
         const lines = wrapText(ctx, el.text || "Type here…", width - 12);
         lines.forEach((line, i) => {
-          ctx.fillText(line, x + 6, y + 18 + i * 16);
+          ctx.fillText(line, x + 6, y + 8 + textFont.canvas + i * textFont.lineHeight);
         });
       }
 
@@ -817,6 +814,7 @@ export function Canvas({
   const showColorPicker = selectedElement && selectedElement.type !== "connector";
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    if (editingId) return;
     if (e.key === "Delete" || e.key === "Backspace") {
       if (canDeleteSelected) {
         onDelete(selectedId!);
@@ -826,6 +824,15 @@ export function Canvas({
     if (e.key === "Escape") {
       setSelectedId(null);
       setEditingId(null);
+    }
+    const key = e.key.toLowerCase();
+    if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (key === "v") onToolChange("select");
+      else if (key === "n") onToolChange("sticky_note");
+      else if (key === "r") onToolChange("rectangle");
+      else if (key === "o") onToolChange("circle");
+      else if (key === "t") onToolChange("text");
+      else if (key === "a") onToolChange("connector");
     }
   }
 
@@ -865,17 +872,57 @@ export function Canvas({
         onDoubleClick={handleDoubleClick}
       />
 
-      {/* Empty board hint */}
+      {/* Empty board hint with quick-start actions */}
       {elements.length === 0 && !dragging && !panning && !drawDraft && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-          <div className="text-center space-y-3 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md rounded-2xl px-10 py-8 border border-gray-200/50 dark:border-gray-700/50 shadow-lg">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center mx-auto">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-blue-500 dark:text-blue-400" strokeLinecap="round">
-                <path d="M10 4v12M4 10h12" />
+        <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+          <div className="text-center bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-2xl px-8 py-7 border border-gray-200/50 dark:border-gray-700/50 shadow-xl pointer-events-auto">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center mx-auto mb-3 shadow-sm">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
+                <path d="M12 5v14M5 12h14" />
               </svg>
             </div>
-            <p className="text-base font-semibold text-gray-700 dark:text-gray-200">Your board is empty</p>
-            <p className="text-sm text-gray-400 dark:text-gray-500 max-w-[260px]">Pick a tool: drag to draw rectangles or circles; click for sticky notes; use Arrow to connect shapes.</p>
+            <p className="text-base font-semibold text-gray-700 dark:text-gray-200 mb-1">Your board is empty</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 mb-5 max-w-[280px]">Get started by adding an element</p>
+            <div className="flex gap-2 justify-center">
+              <button
+                type="button"
+                onClick={() => {
+                  const cx = (containerRef.current?.clientWidth ?? 800) / 2;
+                  const cy = (containerRef.current?.clientHeight ?? 600) / 2;
+                  const world = screenToWorld(cx, cy);
+                  void onCreate("sticky_note", world.x, world.y);
+                }}
+                className="px-3.5 py-2 text-xs font-medium rounded-lg bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300 hover:bg-yellow-200 dark:hover:bg-yellow-900/60 border border-yellow-200 dark:border-yellow-800/50 transition-colors"
+              >
+                Sticky Note
+              </button>
+              <button
+                type="button"
+                onClick={() => { onToolChange("rectangle"); }}
+                className="px-3.5 py-2 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800/50 transition-colors"
+              >
+                Rectangle
+              </button>
+              <button
+                type="button"
+                onClick={() => { onToolChange("circle"); }}
+                className="px-3.5 py-2 text-xs font-medium rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/50 transition-colors"
+              >
+                Circle
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const cx = (containerRef.current?.clientWidth ?? 800) / 2;
+                  const cy = (containerRef.current?.clientHeight ?? 600) / 2;
+                  const world = screenToWorld(cx, cy);
+                  void onCreate("text", world.x, world.y);
+                }}
+                className="px-3.5 py-2 text-xs font-medium rounded-lg bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/50 border border-violet-200 dark:border-violet-800/50 transition-colors"
+              >
+                Text
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -908,12 +955,13 @@ export function Canvas({
         const screen = worldToScreen(el.x + el.width / 2, el.y);
         const props = el.properties as Record<string, string> | undefined;
         const currentTextColor = props?.textColor || "";
+        const currentFontSize = (props?.fontSize || "medium") as "small" | "medium" | "large";
         return (
           <div
             className="absolute z-30"
             style={{
               left: screen.x,
-              top: screen.y - 60,
+              top: screen.y - 90,
               transform: "translateX(-50%)",
             }}
           >
@@ -925,6 +973,11 @@ export function Canvas({
               onTextColorChange={(textColor) => {
                 const existingProps = (el.properties as Record<string, unknown>) || {};
                 onUpdate(el.id, { properties: { ...existingProps, textColor } as BoardElement["properties"] });
+              }}
+              fontSize={currentFontSize}
+              onFontSizeChange={(fontSize) => {
+                const existingProps = (el.properties as Record<string, unknown>) || {};
+                onUpdate(el.id, { properties: { ...existingProps, fontSize } as BoardElement["properties"] });
               }}
             />
           </div>
@@ -943,12 +996,11 @@ export function Canvas({
         const zoom = viewport.zoom;
         const isSticky = el.type === "sticky_note";
         const isCircle = el.type === "circle";
-        const isText = el.type === "text";
         const padding = isSticky ? 8 : 6;
         const paddingPx = padding * zoom;
-        const fontSize = (isSticky || isText ? 14 : 12) * zoom;
-        const lineHeight = isSticky ? 18 : isText ? 16 : 14;
-        const lineHeightPx = lineHeight * zoom;
+        const elFont = getElementFontSize(el);
+        const fontSize = elFont.canvas * zoom;
+        const lineHeightPx = elFont.lineHeight * zoom;
         const w = Math.max(60, el.width * zoom);
         const h = Math.max(lineHeightPx + paddingPx * 2, el.height * zoom);
         return (

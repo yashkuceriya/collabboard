@@ -55,31 +55,36 @@ function IconConnector() {
   );
 }
 
-const tools: { id: ToolId; label: string; Icon: () => React.JSX.Element }[] = [
-  { id: "select", label: "Select", Icon: IconSelect },
-  { id: "sticky_note", label: "Sticky Note", Icon: IconStickyNote },
-  { id: "rectangle", label: "Rectangle", Icon: IconRectangle },
-  { id: "circle", label: "Circle", Icon: IconCircle },
-  { id: "text", label: "Text", Icon: IconText },
-  { id: "connector", label: "Arrow", Icon: IconConnector },
+const tools: { id: ToolId; label: string; shortcut: string; Icon: () => React.JSX.Element }[] = [
+  { id: "select", label: "Select", shortcut: "V", Icon: IconSelect },
+  { id: "sticky_note", label: "Sticky Note", shortcut: "N", Icon: IconStickyNote },
+  { id: "rectangle", label: "Rectangle", shortcut: "R", Icon: IconRectangle },
+  { id: "circle", label: "Circle", shortcut: "O", Icon: IconCircle },
+  { id: "text", label: "Text", shortcut: "T", Icon: IconText },
+  { id: "connector", label: "Arrow", shortcut: "A", Icon: IconConnector },
 ];
 
 export function Toolbar({ tool, onToolChange }: ToolbarProps) {
   return (
-    <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-20 flex gap-0.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-2xl shadow-lg border border-gray-200/60 dark:border-gray-700/60 px-2 py-1.5">
+    <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-20 flex gap-0.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-2xl shadow-xl border border-gray-200/50 dark:border-gray-700/50 px-2 py-1.5">
       {tools.map((t) => (
         <button
           key={t.id}
           onClick={() => onToolChange(t.id)}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-150 ${
+          className={`group flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-150 relative ${
             tool === t.id
-              ? "bg-blue-500 text-white shadow-sm"
+              ? "bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-sm shadow-blue-500/25"
               : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"
           }`}
-          title={t.label}
+          title={`${t.label} (${t.shortcut})`}
         >
           <t.Icon />
           <span className="hidden sm:inline">{t.label}</span>
+          <kbd className={`hidden sm:inline text-[10px] ml-0.5 px-1 py-0.5 rounded ${
+            tool === t.id
+              ? "bg-white/20 text-white/80"
+              : "bg-gray-200/80 dark:bg-gray-700/80 text-gray-400 dark:text-gray-500"
+          }`}>{t.shortcut}</kbd>
         </button>
       ))}
     </div>

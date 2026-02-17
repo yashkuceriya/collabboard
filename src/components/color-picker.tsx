@@ -1,11 +1,15 @@
 "use client";
 
+type FontSize = "small" | "medium" | "large";
+
 interface ColorPickerProps {
   currentColor: string;
   onColorChange: (color: string) => void;
   elementType: "sticky_note" | "rectangle" | "circle" | "text";
   textColor?: string;
   onTextColorChange?: (color: string) => void;
+  fontSize?: FontSize;
+  onFontSizeChange?: (size: FontSize) => void;
 }
 
 const STICKY_COLORS = [
@@ -41,7 +45,13 @@ const TEXT_COLORS = [
   { color: "#EC4899", label: "Pink" },
 ];
 
-export function ColorPicker({ currentColor, onColorChange, elementType, textColor, onTextColorChange }: ColorPickerProps) {
+const FONT_SIZES: { id: FontSize; label: string; icon: string }[] = [
+  { id: "small", label: "Small", icon: "S" },
+  { id: "medium", label: "Medium", icon: "M" },
+  { id: "large", label: "Large", icon: "L" },
+];
+
+export function ColorPicker({ currentColor, onColorChange, elementType, textColor, onTextColorChange, fontSize, onFontSizeChange }: ColorPickerProps) {
   const colors = elementType === "sticky_note" ? STICKY_COLORS : SHAPE_COLORS;
 
   return (
@@ -58,7 +68,7 @@ export function ColorPicker({ currentColor, onColorChange, elementType, textColo
             }}
             onMouseDown={(e) => e.stopPropagation()}
             title={c.label}
-            className={`w-5.5 h-5.5 rounded-full border-2 transition-transform hover:scale-110 ${
+            className={`rounded-full border-2 transition-transform hover:scale-110 ${
               currentColor.toLowerCase() === c.color.toLowerCase()
                 ? "border-blue-500 dark:border-blue-400 scale-110"
                 : "border-gray-300 dark:border-gray-600"
@@ -88,6 +98,32 @@ export function ColorPicker({ currentColor, onColorChange, elementType, textColo
               style={{ backgroundColor: c.color, width: 22, height: 22 }}
             />
           ))}
+        </div>
+      )}
+      {onFontSizeChange && (
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 w-7 shrink-0">Size</span>
+          <div className="flex gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
+            {FONT_SIZES.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onFontSizeChange(s.id);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                title={s.label}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                  (fontSize || "medium") === s.id
+                    ? "bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm"
+                    : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                }`}
+              >
+                {s.icon}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
