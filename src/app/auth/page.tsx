@@ -34,10 +34,11 @@ export default function AuthPage() {
     try {
       if (isSignUp) {
         const redirectTo = `${getAppUrl()}/auth/callback`;
-        const { error: signUpError } = await supabase.auth.signUp(
-          { email, password },
-          { emailRedirectTo: redirectTo }
-        );
+        const { error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: redirectTo },
+        });
         if (signUpError) throw signUpError;
         setSuccess("Check your email to confirm your account, then sign in.");
         setIsSignUp(false);
