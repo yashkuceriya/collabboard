@@ -173,6 +173,20 @@ function getElementFontSize(el: BoardElement): { canvas: number; lineHeight: num
   return FONT_SIZE_MAP[key] || FONT_SIZE_MAP.medium;
 }
 
+type FontFamilyKey = "sans" | "serif" | "mono" | "hand";
+const FONT_FAMILY_MAP: Record<FontFamilyKey, { canvas: string; css: string }> = {
+  sans: { canvas: "-apple-system, BlinkMacSystemFont, sans-serif", css: "-apple-system, BlinkMacSystemFont, sans-serif" },
+  serif: { canvas: "Georgia, 'Times New Roman', serif", css: "Georgia, 'Times New Roman', serif" },
+  mono: { canvas: "'Courier New', Courier, monospace", css: "'Courier New', Courier, monospace" },
+  hand: { canvas: "'Segoe Script', 'Comic Sans MS', cursive", css: "'Segoe Script', 'Comic Sans MS', cursive" },
+};
+
+function getElementFontFamily(el: BoardElement): { canvas: string; css: string } {
+  const props = el.properties as Record<string, string> | undefined;
+  const key = (props?.fontFamily || "sans") as FontFamilyKey;
+  return FONT_FAMILY_MAP[key] || FONT_FAMILY_MAP.sans;
+}
+
 export function Canvas({
   elements,
   viewport,
@@ -335,8 +349,9 @@ export function Canvas({
         ctx.stroke();
 
         const stickyFont = getElementFontSize(el);
+        const stickyFF = getElementFontFamily(el);
         ctx.fillStyle = getElementTextColor(el, isDark);
-        ctx.font = `${stickyFont.canvas}px -apple-system, BlinkMacSystemFont, sans-serif`;
+        ctx.font = `${stickyFont.canvas}px ${stickyFF.canvas}`;
         const lines = wrapText(ctx, el.text, width - 20);
         lines.forEach((line, i) => {
           ctx.fillText(line, x + 10, y + 10 + stickyFont.canvas + i * stickyFont.lineHeight);
@@ -351,8 +366,9 @@ export function Canvas({
         ctx.stroke();
         if (el.text) {
           const rectFont = getElementFontSize(el);
+          const rectFF = getElementFontFamily(el);
           ctx.fillStyle = getElementTextColor(el, isDark);
-          ctx.font = `${rectFont.canvas}px -apple-system, BlinkMacSystemFont, sans-serif`;
+          ctx.font = `${rectFont.canvas}px ${rectFF.canvas}`;
           const lines = wrapText(ctx, el.text, width - 14);
           lines.forEach((line, i) => {
             ctx.fillText(line, x + 7, y + 8 + rectFont.canvas + i * rectFont.lineHeight);
@@ -372,8 +388,9 @@ export function Canvas({
         ctx.stroke();
         if (el.text) {
           const circFont = getElementFontSize(el);
+          const circFF = getElementFontFamily(el);
           ctx.fillStyle = getElementTextColor(el, isDark);
-          ctx.font = `${circFont.canvas}px -apple-system, BlinkMacSystemFont, sans-serif`;
+          ctx.font = `${circFont.canvas}px ${circFF.canvas}`;
           const lines = wrapText(ctx, el.text, width - 12);
           const startY = cy - (lines.length * circFont.lineHeight) / 2 + circFont.lineHeight / 2;
           lines.forEach((line, i) => {
@@ -391,8 +408,9 @@ export function Canvas({
         ctx.fill();
         ctx.stroke();
         const textFont = getElementFontSize(el);
+        const textFF = getElementFontFamily(el);
         ctx.fillStyle = getElementTextColor(el, isDark);
-        ctx.font = `${textFont.canvas}px -apple-system, BlinkMacSystemFont, sans-serif`;
+        ctx.font = `${textFont.canvas}px ${textFF.canvas}`;
         const lines = wrapText(ctx, el.text || "Type here…", width - 12);
         lines.forEach((line, i) => {
           ctx.fillText(line, x + 6, y + 8 + textFont.canvas + i * textFont.lineHeight);
@@ -956,12 +974,13 @@ export function Canvas({
         const props = el.properties as Record<string, string> | undefined;
         const currentTextColor = props?.textColor || "";
         const currentFontSize = (props?.fontSize || "medium") as "small" | "medium" | "large";
+        const currentFontFamily = (props?.fontFamily || "sans") as "sans" | "serif" | "mono" | "hand";
         return (
           <div
             className="absolute z-30"
             style={{
               left: screen.x,
-              top: screen.y - 90,
+              top: screen.y - 115,
               transform: "translateX(-50%)",
             }}
           >
@@ -978,6 +997,11 @@ export function Canvas({
               onFontSizeChange={(fontSize) => {
                 const existingProps = (el.properties as Record<string, unknown>) || {};
                 onUpdate(el.id, { properties: { ...existingProps, fontSize } as BoardElement["properties"] });
+              }}
+              fontFamily={currentFontFamily}
+              onFontFamilyChange={(fontFamily) => {
+                const existingProps = (el.properties as Record<string, unknown>) || {};
+                onUpdate(el.id, { properties: { ...existingProps, fontFamily } as BoardElement["properties"] });
               }}
             />
           </div>
@@ -999,6 +1023,7 @@ export function Canvas({
         const padding = isSticky ? 8 : 6;
         const paddingPx = padding * zoom;
         const elFont = getElementFontSize(el);
+        const elFF = getElementFontFamily(el);
         const fontSize = elFont.canvas * zoom;
         const lineHeightPx = elFont.lineHeight * zoom;
         const w = Math.max(60, el.width * zoom);
@@ -1017,6 +1042,7 @@ export function Canvas({
               padding: paddingPx,
               fontSize,
               lineHeight: lineHeightPx,
+              fontFamily: elFF.css,
               textAlign: isCircle ? "center" : "left",
               borderRadius: 4,
               backgroundColor: isSticky ? el.color : `${el.color}22`,

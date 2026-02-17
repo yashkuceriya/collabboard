@@ -1,6 +1,7 @@
 "use client";
 
 type FontSize = "small" | "medium" | "large";
+type FontFamily = "sans" | "serif" | "mono" | "hand";
 
 interface ColorPickerProps {
   currentColor: string;
@@ -10,6 +11,8 @@ interface ColorPickerProps {
   onTextColorChange?: (color: string) => void;
   fontSize?: FontSize;
   onFontSizeChange?: (size: FontSize) => void;
+  fontFamily?: FontFamily;
+  onFontFamilyChange?: (family: FontFamily) => void;
 }
 
 const STICKY_COLORS = [
@@ -51,7 +54,14 @@ const FONT_SIZES: { id: FontSize; label: string; icon: string }[] = [
   { id: "large", label: "Large", icon: "L" },
 ];
 
-export function ColorPicker({ currentColor, onColorChange, elementType, textColor, onTextColorChange, fontSize, onFontSizeChange }: ColorPickerProps) {
+const FONT_FAMILIES: { id: FontFamily; label: string; display: string; preview: string }[] = [
+  { id: "sans", label: "Sans-serif", display: "Sans", preview: "font-sans" },
+  { id: "serif", label: "Serif", display: "Serif", preview: "font-serif" },
+  { id: "mono", label: "Monospace", display: "Mono", preview: "font-mono" },
+  { id: "hand", label: "Handwritten", display: "Hand", preview: "" },
+];
+
+export function ColorPicker({ currentColor, onColorChange, elementType, textColor, onTextColorChange, fontSize, onFontSizeChange, fontFamily, onFontFamilyChange }: ColorPickerProps) {
   const colors = elementType === "sticky_note" ? STICKY_COLORS : SHAPE_COLORS;
 
   return (
@@ -121,6 +131,38 @@ export function ColorPicker({ currentColor, onColorChange, elementType, textColo
                 }`}
               >
                 {s.icon}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {onFontFamilyChange && (
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 w-7 shrink-0">Font</span>
+          <div className="flex gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
+            {FONT_FAMILIES.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onFontFamilyChange(f.id);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                title={f.label}
+                className={`px-2 py-1 rounded-md text-[11px] transition-all ${
+                  (fontFamily || "sans") === f.id
+                    ? "bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm font-semibold"
+                    : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                }`}
+                style={{
+                  fontFamily: f.id === "serif" ? "Georgia, serif"
+                    : f.id === "mono" ? "'Courier New', monospace"
+                    : f.id === "hand" ? "'Segoe Script', 'Comic Sans MS', cursive"
+                    : "-apple-system, sans-serif",
+                }}
+              >
+                {f.display}
               </button>
             ))}
           </div>
