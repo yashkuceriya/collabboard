@@ -12,6 +12,8 @@ export default function DashboardPage() {
   const [boards, setBoards] = useState<Board[]>([]);
   const [loading, setLoading] = useState(true);
   const [createError, setCreateError] = useState("");
+  const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
   const router = useRouter();
 
   useEffect(() => {
@@ -50,6 +52,14 @@ export default function DashboardPage() {
     if (data) {
       router.push(`/board/${(data as Board).id}`);
     }
+  }
+
+  async function renameBoard(id: string, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    await supabase.from("boards").update({ name: trimmed } as never).eq("id", id);
+    setBoards((prev) => prev.map((b) => (b.id === id ? { ...b, name: trimmed } : b)));
+    setEditingBoardId(null);
   }
 
   async function handleSignOut() {
@@ -139,25 +149,59 @@ export default function DashboardPage() {
               ];
               const grad = gradients[i % gradients.length];
               return (
-                <button
+                <div
                   key={board.id}
-                  onClick={() => router.push(`/board/${board.id}`)}
-                  className="group bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-800/60 rounded-xl overflow-hidden text-left hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
+                  className="group bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-800/60 rounded-xl overflow-hidden text-left hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
+                  onClick={() => {
+                    if (editingBoardId !== board.id) router.push(`/board/${board.id}`);
+                  }}
                 >
                   <div className={`h-2 w-full bg-gradient-to-r ${grad}`} />
                   <div className="p-5">
-                    <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${grad} flex items-center justify-center mb-3 shadow-sm`}>
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="1.5">
-                        <rect x="2" y="2" width="12" height="12" rx="2" />
-                        <path d="M6 5h4M5 8h6M6 11h4" />
-                      </svg>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${grad} flex items-center justify-center shadow-sm`}>
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="1.5">
+                          <rect x="2" y="2" width="12" height="12" rx="2" />
+                          <path d="M6 5h4M5 8h6M6 11h4" />
+                        </svg>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingBoardId(board.id);
+                          setEditName(board.name);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+                        title="Rename board"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
+                          <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" />
+                        </svg>
+                      </button>
                     </div>
-                    <h3 className="font-semibold text-gray-800 dark:text-gray-100 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{board.name}</h3>
+                    {editingBoardId === board.id ? (
+                      <input
+                        autoFocus
+                        type="text"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        onBlur={() => renameBoard(board.id, editName)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") renameBoard(board.id, editName);
+                          if (e.key === "Escape") setEditingBoardId(null);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full font-semibold text-gray-800 dark:text-gray-100 bg-transparent border-b-2 border-blue-500 outline-none pb-0.5"
+                      />
+                    ) : (
+                      <h3 className="font-semibold text-gray-800 dark:text-gray-100 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{board.name}</h3>
+                    )}
                     <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5">
                       {new Date(board.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
                     </p>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>

@@ -139,6 +139,27 @@ function getConnectorEndpoints(
   return { x1: start.x, y1: start.y, x2: end.x, y2: end.y };
 }
 
+function hexLuminance(hex: string): number {
+  const c = hex.replace("#", "");
+  const r = parseInt(c.substring(0, 2), 16) / 255;
+  const g = parseInt(c.substring(2, 4), 16) / 255;
+  const b = parseInt(c.substring(4, 6), 16) / 255;
+  const toLinear = (v: number) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+function getContrastTextColor(bgHex: string): string {
+  return hexLuminance(bgHex) > 0.4 ? "#1a1a1a" : "#f3f4f6";
+}
+
+function getElementTextColor(el: BoardElement, isDark: boolean): string {
+  const props = el.properties as Record<string, string> | undefined;
+  if (props?.textColor) return props.textColor;
+  if (el.type === "sticky_note") return getContrastTextColor(el.color);
+  if (el.type === "text") return getContrastTextColor(el.color);
+  return isDark ? "#f3f4f6" : "#1a1a1a";
+}
+
 export function Canvas({
   elements,
   viewport,
@@ -319,7 +340,7 @@ export function Canvas({
         ctx.roundRect(x, y, width, height, 8);
         ctx.stroke();
 
-        ctx.fillStyle = isDark ? "#f3f4f6" : "#1a1a1a";
+        ctx.fillStyle = getElementTextColor(el, isDark);
         ctx.font = `${Math.max(13, 14)}px -apple-system, BlinkMacSystemFont, sans-serif`;
         const lines = wrapText(ctx, el.text, width - 20);
         lines.forEach((line, i) => {
@@ -334,7 +355,7 @@ export function Canvas({
         ctx.fill();
         ctx.stroke();
         if (el.text) {
-          ctx.fillStyle = isDark ? "#f3f4f6" : "#1a1a1a";
+          ctx.fillStyle = getElementTextColor(el, isDark);
           ctx.font = "13px -apple-system, BlinkMacSystemFont, sans-serif";
           const lines = wrapText(ctx, el.text, width - 14);
           lines.forEach((line, i) => {
@@ -354,7 +375,7 @@ export function Canvas({
         ctx.fill();
         ctx.stroke();
         if (el.text) {
-          ctx.fillStyle = isDark ? "#f3f4f6" : "#1a1a1a";
+          ctx.fillStyle = getElementTextColor(el, isDark);
           ctx.font = "12px -apple-system, BlinkMacSystemFont, sans-serif";
           const lines = wrapText(ctx, el.text, width - 12);
           const lineHeight = 14;
@@ -365,15 +386,15 @@ export function Canvas({
           });
         }
       } else if (el.type === "text") {
-        ctx.fillStyle = el.color;
+        ctx.fillStyle = el.color + "22";
         ctx.strokeStyle = el.color;
-        ctx.lineWidth = 1 / viewport.zoom;
-        const r = 4;
+        ctx.lineWidth = 1.5 / viewport.zoom;
+        const r = 6;
         ctx.beginPath();
         ctx.roundRect(x, y, width, height, r);
         ctx.fill();
         ctx.stroke();
-        ctx.fillStyle = isDark ? "#f3f4f6" : "#1a1a1a";
+        ctx.fillStyle = getElementTextColor(el, isDark);
         ctx.font = "14px -apple-system, BlinkMacSystemFont, sans-serif";
         const lines = wrapText(ctx, el.text || "Type here…", width - 12);
         lines.forEach((line, i) => {
@@ -885,12 +906,14 @@ export function Canvas({
       {selectedId && !editingId && showColorPicker && (() => {
         const el = selectedElement!;
         const screen = worldToScreen(el.x + el.width / 2, el.y);
+        const props = el.properties as Record<string, string> | undefined;
+        const currentTextColor = props?.textColor || "";
         return (
           <div
             className="absolute z-30"
             style={{
               left: screen.x,
-              top: screen.y - 44,
+              top: screen.y - 60,
               transform: "translateX(-50%)",
             }}
           >
@@ -898,6 +921,11 @@ export function Canvas({
               currentColor={el.color}
               elementType={el.type as "sticky_note" | "rectangle" | "circle" | "text"}
               onColorChange={(color) => onUpdate(el.id, { color })}
+              textColor={currentTextColor}
+              onTextColorChange={(textColor) => {
+                const existingProps = (el.properties as Record<string, unknown>) || {};
+                onUpdate(el.id, { properties: { ...existingProps, textColor } as BoardElement["properties"] });
+              }}
             />
           </div>
         );
@@ -940,7 +968,7 @@ export function Canvas({
               textAlign: isCircle ? "center" : "left",
               borderRadius: 4,
               backgroundColor: isSticky ? el.color : `${el.color}22`,
-              color: isDark ? "#f3f4f6" : "#1a1a1a",
+              color: getElementTextColor(el, isDark),
               pointerEvents: "auto",
             }}
             value={editText}

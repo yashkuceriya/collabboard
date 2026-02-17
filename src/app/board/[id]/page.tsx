@@ -25,6 +25,9 @@ export default function BoardPage() {
   const [tool, setTool] = useState<"select" | "sticky_note" | "rectangle" | "circle" | "text" | "connector">("select");
   const [openEditorForId, setOpenEditorForId] = useState<string | null>(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
+  const [boardName, setBoardName] = useState("Untitled Board");
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
 
   // Load user, session, and initial elements (merge with any realtime updates that arrived first)
   useEffect(() => {
@@ -37,6 +40,13 @@ export default function BoardPage() {
       }
       setUser(user);
       setAccessToken(session?.access_token ?? null);
+
+      const { data: boardData } = await supabase
+        .from("boards")
+        .select("name")
+        .eq("id", boardId)
+        .single();
+      if (boardData) setBoardName((boardData as { name: string }).name);
 
       const { data } = await supabase
         .from("board_elements")
@@ -58,6 +68,14 @@ export default function BoardPage() {
     }
     init();
   }, [boardId, router]);
+
+  async function saveBoardName(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) { setEditingName(false); return; }
+    setBoardName(trimmed);
+    setEditingName(false);
+    await supabase.from("boards").update({ name: trimmed } as never).eq("id", boardId);
+  }
 
   // Real-time element sync (postgres_changes + broadcast fallback for add/delete)
   const { broadcastElement, broadcastElementUpdated, broadcastElementDeleted } = useRealtimeElements(
@@ -85,7 +103,7 @@ export default function BoardPage() {
             ? "#42A5F5"
             : type === "circle"
               ? "#10B981"
-              : "#f3f4f6";
+              : "#3B82F6";
       const w = width ?? (type === "sticky_note" ? 200 : type === "text" ? 180 : 120);
       const h = height ?? (type === "sticky_note" ? 200 : type === "text" ? 40 : type === "circle" ? 120 : 100);
       const now = new Date().toISOString();
@@ -298,7 +316,32 @@ export default function BoardPage() {
             ← Boards
           </button>
           <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
-          <span className="text-sm font-semibold text-gray-800 dark:text-gray-200 tracking-tight">CollabBoard</span>
+          {editingName ? (
+            <input
+              autoFocus
+              type="text"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              onBlur={() => saveBoardName(nameInput)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveBoardName(nameInput);
+                if (e.key === "Escape") setEditingName(false);
+              }}
+              className="text-sm font-semibold text-gray-800 dark:text-gray-200 bg-transparent border-b-2 border-blue-500 outline-none px-1 py-0.5 max-w-[200px]"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => { setEditingName(true); setNameInput(boardName); }}
+              className="text-sm font-semibold text-gray-800 dark:text-gray-200 tracking-tight hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center gap-1.5 group"
+              title="Click to rename"
+            >
+              {boardName}
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300 dark:text-gray-600 group-hover:text-blue-400">
+                <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" />
+              </svg>
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <ThemeSwitcher />

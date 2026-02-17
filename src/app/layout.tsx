@@ -16,6 +16,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "CollabBoard",
   description: "Real-time collaborative whiteboard with AI board agent",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 // Prevent flash: set theme class before paint from localStorage + system
