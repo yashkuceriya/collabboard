@@ -170,7 +170,7 @@ export default function BoardPage() {
         height: 0,
         color: "#64748b",
         text: "",
-        properties: { fromId, toId } as Record<string, unknown>,
+        properties: { fromId, toId } as BoardElement["properties"],
         created_by: user.id,
         updated_at: new Date().toISOString(),
         created_at: new Date().toISOString(),

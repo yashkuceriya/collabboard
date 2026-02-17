@@ -15,7 +15,7 @@ interface CanvasProps {
   tool: ToolId;
   onToolChange: (t: ToolId) => void;
   onCreate: (type: "sticky_note" | "rectangle" | "circle" | "text", x: number, y: number, width?: number, height?: number) => void | Promise<void>;
-  onCreateConnector?: (fromId: string, toId: string) => void | Promise<void>;
+  onCreateConnector?: (fromId: string, toId: string) => void | Promise<void | string | null>;
   onUpdate: (id: string, updates: Partial<BoardElement>) => void;
   onDelete: (id: string) => void;
   onCursorMove: (x: number, y: number) => void;
