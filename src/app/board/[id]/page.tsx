@@ -277,7 +277,7 @@ export default function BoardPage() {
   const enableAi = process.env.NEXT_PUBLIC_ENABLE_AI === "true";
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-gray-100 dark:bg-gray-950 flex flex-col relative">
+    <div className="h-screen w-screen overflow-hidden bg-gray-50 dark:bg-gray-950 flex flex-col relative">
       {/* AI Chat panel (full app only; not MVP) */}
       {enableAi && showChatPanel && (
         <ChatPanel

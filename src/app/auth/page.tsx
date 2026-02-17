@@ -60,12 +60,12 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-950 dark:via-gray-950 dark:to-gray-900 px-4">
       <div className="w-full max-w-sm">
         {/* Logo area */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-blue-500 shadow-lg shadow-blue-500/25 mb-4">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/30 mb-4">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="3" />
               <path d="M9 8h6M8 12h8M9 16h6" />
             </svg>
@@ -75,7 +75,7 @@ export default function AuthPage() {
         </div>
 
         {/* Card */}
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl shadow-gray-200/50 dark:shadow-black/30 border border-gray-200/80 dark:border-gray-800/80 p-7">
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl shadow-gray-200/60 dark:shadow-black/40 border border-gray-200/60 dark:border-gray-800/60 p-7">
           <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-5 text-center">
             {isSignUp ? "Create your account" : "Welcome back"}
           </h2>
@@ -116,7 +116,7 @@ export default function AuthPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl disabled:opacity-50 text-sm font-medium transition-colors shadow-sm shadow-blue-500/25"
+              className="w-full py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-xl disabled:opacity-50 text-sm font-medium transition-all shadow-sm shadow-blue-500/25"
             >
               {loading ? "Loading..." : isSignUp ? "Create Account" : "Sign In"}
             </button>

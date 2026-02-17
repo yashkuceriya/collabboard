@@ -87,6 +87,39 @@ function distanceToSegment(px: number, py: number, x1: number, y1: number, x2: n
   return Math.hypot(px - projX, py - projY);
 }
 
+function clipToRectEdge(
+  cx: number, cy: number, w: number, h: number, tx: number, ty: number
+): { x: number; y: number } {
+  const dx = tx - cx;
+  const dy = ty - cy;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+  const hw = w / 2;
+  const hh = h / 2;
+  const scaleX = dx !== 0 ? hw / Math.abs(dx) : Infinity;
+  const scaleY = dy !== 0 ? hh / Math.abs(dy) : Infinity;
+  const scale = Math.min(scaleX, scaleY);
+  return { x: cx + dx * scale, y: cy + dy * scale };
+}
+
+function clipToEllipseEdge(
+  cx: number, cy: number, rx: number, ry: number, tx: number, ty: number
+): { x: number; y: number } {
+  const dx = tx - cx;
+  const dy = ty - cy;
+  if (dx === 0 && dy === 0) return { x: cx + rx, y: cy };
+  const angle = Math.atan2(dy, dx);
+  return { x: cx + rx * Math.cos(angle), y: cy + ry * Math.sin(angle) };
+}
+
+function clipToShapeEdge(el: BoardElement, targetX: number, targetY: number): { x: number; y: number } {
+  const cx = el.x + el.width / 2;
+  const cy = el.y + el.height / 2;
+  if (el.type === "circle") {
+    return clipToEllipseEdge(cx, cy, el.width / 2, el.height / 2, targetX, targetY);
+  }
+  return clipToRectEdge(cx, cy, el.width, el.height, targetX, targetY);
+}
+
 function getConnectorEndpoints(
   el: BoardElement,
   elements: BoardElement[]
@@ -99,11 +132,11 @@ function getConnectorEndpoints(
   const fromEl = elements.find((e) => e.id === fromId && e.type !== "connector");
   const toEl = elements.find((e) => e.id === toId && e.type !== "connector");
   if (!fromEl || !toEl) return null;
-  const x1 = fromEl.x + fromEl.width / 2;
-  const y1 = fromEl.y + fromEl.height / 2;
-  const x2 = toEl.x + toEl.width / 2;
-  const y2 = toEl.y + toEl.height / 2;
-  return { x1, y1, x2, y2 };
+  const fromCenter = { x: fromEl.x + fromEl.width / 2, y: fromEl.y + fromEl.height / 2 };
+  const toCenter = { x: toEl.x + toEl.width / 2, y: toEl.y + toEl.height / 2 };
+  const start = clipToShapeEdge(fromEl, toCenter.x, toCenter.y);
+  const end = clipToShapeEdge(toEl, fromCenter.x, fromCenter.y);
+  return { x1: start.x, y1: start.y, x2: end.x, y2: end.y };
 }
 
 export function Canvas({
@@ -271,35 +304,41 @@ export function Canvas({
       ctx.save();
 
       if (el.type === "sticky_note") {
-        ctx.shadowColor = isDark ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.08)";
-        ctx.shadowBlur = 12;
-        ctx.shadowOffsetY = 3;
+        ctx.shadowColor = isDark ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.10)";
+        ctx.shadowBlur = 16;
+        ctx.shadowOffsetX = 1;
+        ctx.shadowOffsetY = 4;
         ctx.fillStyle = el.color;
         ctx.beginPath();
-        ctx.roundRect(x, y, width, height, 6);
+        ctx.roundRect(x, y, width, height, 8);
         ctx.fill();
         ctx.shadowColor = "transparent";
+        ctx.strokeStyle = isDark ? "rgba(0,0,0,0.15)" : "rgba(0,0,0,0.06)";
+        ctx.lineWidth = 1 / viewport.zoom;
+        ctx.beginPath();
+        ctx.roundRect(x, y, width, height, 8);
+        ctx.stroke();
 
         ctx.fillStyle = isDark ? "#f3f4f6" : "#1a1a1a";
-        ctx.font = "14px -apple-system, BlinkMacSystemFont, sans-serif";
-        const lines = wrapText(ctx, el.text, width - 16);
+        ctx.font = `${Math.max(13, 14)}px -apple-system, BlinkMacSystemFont, sans-serif`;
+        const lines = wrapText(ctx, el.text, width - 20);
         lines.forEach((line, i) => {
-          ctx.fillText(line, x + 8, y + 24 + i * 18);
+          ctx.fillText(line, x + 10, y + 26 + i * 20);
         });
       } else if (el.type === "rectangle") {
-        ctx.fillStyle = el.color + "33";
+        ctx.fillStyle = el.color + "22";
         ctx.strokeStyle = el.color;
         ctx.lineWidth = 2 / viewport.zoom;
         ctx.beginPath();
-        ctx.roundRect(x, y, width, height, 4);
+        ctx.roundRect(x, y, width, height, 6);
         ctx.fill();
         ctx.stroke();
         if (el.text) {
           ctx.fillStyle = isDark ? "#f3f4f6" : "#1a1a1a";
-          ctx.font = "12px -apple-system, BlinkMacSystemFont, sans-serif";
-          const lines = wrapText(ctx, el.text, width - 12);
+          ctx.font = "13px -apple-system, BlinkMacSystemFont, sans-serif";
+          const lines = wrapText(ctx, el.text, width - 14);
           lines.forEach((line, i) => {
-            ctx.fillText(line, x + 6, y + 16 + i * 14);
+            ctx.fillText(line, x + 7, y + 18 + i * 16);
           });
         }
       } else if (el.type === "circle") {
@@ -307,7 +346,7 @@ export function Canvas({
         const cy = y + height / 2;
         const rx = width / 2;
         const ry = height / 2;
-        ctx.fillStyle = el.color + "33";
+        ctx.fillStyle = el.color + "22";
         ctx.strokeStyle = el.color;
         ctx.lineWidth = 2 / viewport.zoom;
         ctx.beginPath();
@@ -404,21 +443,20 @@ export function Canvas({
       ctx.restore();
     }
 
-    // Connector drag preview
+    // Connector drag preview (edge to cursor)
     if (connectorFromId && connectorPreview) {
       const fromEl = elements.find((e) => e.id === connectorFromId && e.type !== "connector");
       if (fromEl) {
-        const x1 = fromEl.x + fromEl.width / 2;
-        const y1 = fromEl.y + fromEl.height / 2;
+        const edgePt = clipToShapeEdge(fromEl, connectorPreview.x, connectorPreview.y);
         ctx.save();
         ctx.strokeStyle = strokeColor;
         ctx.lineWidth = 2 / viewport.zoom;
         ctx.setLineDash([6 / viewport.zoom, 4 / viewport.zoom]);
         ctx.beginPath();
-        ctx.moveTo(x1, y1);
+        ctx.moveTo(edgePt.x, edgePt.y);
         ctx.lineTo(connectorPreview.x, connectorPreview.y);
         ctx.stroke();
-        const angle = Math.atan2(connectorPreview.y - y1, connectorPreview.x - x1);
+        const angle = Math.atan2(connectorPreview.y - edgePt.y, connectorPreview.x - edgePt.x);
         ctx.fillStyle = strokeColor;
         ctx.beginPath();
         ctx.moveTo(connectorPreview.x, connectorPreview.y);
