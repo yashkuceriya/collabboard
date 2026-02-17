@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CollabBoard
 
-## Getting Started
+Real-time collaborative whiteboard. Built with Next.js and Supabase.  
+**MVP** = 9 items (see [MVP-CHECKLIST.md](./MVP-CHECKLIST.md)); **AI board agent** = full app (optional, enable with `NEXT_PUBLIC_ENABLE_AI=true`).
 
-First, run the development server:
+**MVP scope:** Infinite board (pan/zoom) · Sticky notes (editable text) · Shapes (rectangle, circle) · Create/move/edit objects · **Delete:** select any object then press Delete key or use the Delete button · Real-time sync · Multiplayer cursors with labels · Presence (who’s online) · Auth · Deployed & publicly accessible.
+
+## Quick Start
+
+### 1. Clone and install
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone <your-repo-url>
+cd collabboard
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Supabase setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. **Create project:** [supabase.com](https://supabase.com) → New Project → choose org, name, password, region.
+2. **Run schema:** Dashboard → SQL Editor → New Query → paste contents of `supabase/schema.sql` → Run.  
+   This creates `boards`, `board_elements`, RLS (including **shared board access**: any authenticated user can read any board for collaboration), realtime on `board_elements`, and `updated_at` trigger.  
+   **If you already ran an older schema:** run `supabase/migrations/20250216_shared_board_access.sql` in SQL Editor so multiple users can open the same board and sync.
+3. **Enable Auth:** Authentication → Providers → **Email** → Enable. Optionally turn off "Confirm email" for dev.
+4. **Enable Realtime (required for presence + cursors):**  
+   Dashboard → **Project Settings** (gear) → **Realtime**. Ensure **Realtime** is enabled.  
+   If your project uses "Only allow private channels", leave it; the app calls `setAuth()` so the session is sent.  
+   If presence/cursors still don’t work, try **Allow public access** temporarily to confirm it’s not an auth restriction.
+5. **Get keys:** Settings → API → copy **Project URL** and **anon public** key.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. Environment variables
 
-## Learn More
+Copy `.env.example` to `.env.local` and fill in:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+cp .env.example .env.local
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Edit `.env.local`:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `NEXT_PUBLIC_SUPABASE_URL` — Project URL from Supabase
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` — anon key from Supabase
+- `NEXT_PUBLIC_ENABLE_AI=true` — optional; enables AI board agent (full app)
+- `OPENAI_API_KEY` — only if AI is enabled
 
-## Deploy on Vercel
+### 4. Run locally
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+pnpm dev
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Open [http://localhost:3000](http://localhost:3000)
+
+### 5. Test multiplayer
+
+Open two browser windows (or one normal + one incognito) with **two different accounts** at the **same board URL**. You should see:
+- **Real-time cursors:** Each user’s cursor and name label on the board. Cursor position is sent via Supabase Realtime **broadcast** (~30fps); “who’s online” comes from **presence**.
+- Sticky notes and shapes appearing in real-time
+- Edits synced instantly
+
+**How cursor tracking works:** On mouse move, the canvas calls `broadcastCursor(x, y)` (world coordinates). The presence hook sends a `broadcast` message on the board channel; other clients receive it and update a cursor map, which is merged with the presence list so each peer’s cursor is drawn on the canvas.
+
+## Deploy to Vercel
+
+1. Push to GitHub
+2. Import in [vercel.com](https://vercel.com) → New Project
+3. Add environment variables (same as `.env.local`)
+4. Deploy
+
+## Tech Stack
+
+| Layer | Choice |
+|-------|--------|
+| Frontend | Next.js (React) + TypeScript |
+| Backend | Next.js API Routes |
+| Database | Supabase (PostgreSQL) |
+| Real-time | Supabase Realtime (Postgres changes + Presence) — **no Liveblocks** |
+| Auth | Supabase Auth |
+| AI (full app) | OpenAI GPT-4o-mini + Vercel AI SDK (optional) |
+| Hosting | Vercel |
+
+**Constraint:** This project does not use Liveblocks. All real-time collaboration (cursor sync, presence, object sync) is implemented with Supabase Realtime only.
