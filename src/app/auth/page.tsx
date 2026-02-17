@@ -4,31 +4,48 @@ import { useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
+function getAppUrl() {
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+  const base =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_VERCEL_URL ||
+    "http://localhost:3000";
+  const url = base.startsWith("http") ? base : `https://${base}`;
+  return url.endsWith("/") ? url.slice(0, -1) : url;
+}
+
 export default function AuthPage() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setSuccess("");
     setLoading(true);
 
     try {
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
-        // After signup, auto sign in
-        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-        if (signInError) throw signInError;
+        const redirectTo = `${getAppUrl()}/auth/callback`;
+        const { error: signUpError } = await supabase.auth.signUp(
+          { email, password },
+          { emailRedirectTo: redirectTo }
+        );
+        if (signUpError) throw signUpError;
+        setSuccess("Check your email to confirm your account, then sign in.");
+        setIsSignUp(false);
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        router.push("/dashboard");
       }
-      router.push("/dashboard");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
@@ -82,6 +99,9 @@ export default function AuthPage() {
               />
             </div>
 
+            {success && (
+              <div className="text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 p-3 rounded-xl border border-green-200 dark:border-green-800/40">{success}</div>
+            )}
             {error && (
               <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-xl border border-red-100 dark:border-red-800/40">{error}</div>
             )}

@@ -21,7 +21,8 @@ pnpm install
 2. **Run schema:** Dashboard → SQL Editor → New Query → paste contents of `supabase/schema.sql` → Run.  
    This creates `boards`, `board_elements`, RLS (including **shared board access**: any authenticated user can read any board for collaboration), realtime on `board_elements`, and `updated_at` trigger.  
    **If you already ran an older schema:** run `supabase/migrations/20250216_shared_board_access.sql` in SQL Editor so multiple users can open the same board and sync.
-3. **Enable Auth:** Authentication → Providers → **Email** → Enable. Optionally turn off "Confirm email" for dev.
+3. **Enable Auth:** Authentication → Providers → **Email** → Enable.  
+   **Email confirmation (e.g. on Vercel):** Dashboard → **Authentication** → **URL Configuration**. Set **Site URL** to your app URL (e.g. `https://your-app.vercel.app`). Add **Redirect URLs**: `https://your-app.vercel.app/auth/callback` (and `http://localhost:3000/auth/callback` for local dev). Then the sign-up confirmation email will send users to your app after they confirm.
 4. **Enable Realtime (required for presence + cursors):**  
    Dashboard → **Project Settings** (gear) → **Realtime**. Ensure **Realtime** is enabled.  
    If your project uses "Only allow private channels", leave it; the app calls `setAuth()` so the session is sent.  
@@ -40,6 +41,7 @@ Edit `.env.local`:
 
 - `NEXT_PUBLIC_SUPABASE_URL` — Project URL from Supabase
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — anon key from Supabase
+- `NEXT_PUBLIC_SITE_URL` — optional; your app URL in production (e.g. `https://your-app.vercel.app`) so sign-up confirmation emails redirect to your deployment. Vercel sets `NEXT_PUBLIC_VERCEL_URL` automatically.
 - `NEXT_PUBLIC_ENABLE_AI=true` — optional; enables AI board agent (full app)
 - `OPENAI_API_KEY` — only if AI is enabled
 
