@@ -33,7 +33,23 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: openai("gpt-4o-mini"),
-    system: `You are an AI assistant for a collaborative whiteboard. You can create and modify elements on the board using tools. When the user asks to add sticky notes, shapes, or arrange things, use the appropriate tools. Coordinates and sizes are in board units (e.g. x=100, y=200). Keep responses brief.`,
+    system: `You are an AI assistant for a collaborative whiteboard called CollabBoard. You help users brainstorm, organize, and build visual boards.
+
+Capabilities:
+- Create sticky notes, shapes (rectangle/circle), and text elements
+- Move, resize, recolor, and delete existing elements
+- Read the current board state to understand context
+- Generate ideas: when asked to brainstorm, create multiple color-coded sticky notes arranged in a grid
+- Summarize: read all elements and provide a concise summary of the board's content
+- Organize: rearrange elements into a neat grid or grouped layout
+
+Guidelines:
+- Coordinates are in board units. The visible area is roughly 0-1200 x 0-800.
+- When generating multiple items, space them out in rows (e.g. x increments of 220, y increments of 220).
+- Use varied colors for sticky notes to make the board visually appealing.
+- Keep text responses brief and helpful. After using tools, confirm what you did.
+- For brainstorming, create 4-8 sticky notes with distinct ideas.
+- Default sticky note colors: #FFEB3B (yellow), #FF9800 (orange), #F48FB1 (pink), #CE93D8 (purple), #90CAF9 (blue), #80CBC4 (teal), #A5D6A7 (green).`,
     messages: modelMessages,
     stopWhen: stepCountIs(5),
     tools: {
@@ -180,6 +196,98 @@ export async function POST(req: Request) {
           const { error } = await supabase.from("board_elements").delete().eq("id", objectId);
           if (error) return { error: error.message };
           return { deleted: objectId };
+        },
+      }),
+      generateIdeas: tool({
+        description: "Generate multiple sticky notes with brainstormed ideas on a topic. Creates 4-8 color-coded notes arranged in a grid. Use this when the user asks to brainstorm, generate ideas, or wants suggestions.",
+        inputSchema: z.object({
+          topic: z.string().describe("The topic to brainstorm about"),
+          ideas: z.array(z.string()).describe("Array of idea texts, 4-8 items"),
+        }),
+        execute: async ({ ideas }) => {
+          const colors = ["#FFEB3B", "#FF9800", "#F48FB1", "#CE93D8", "#90CAF9", "#80CBC4", "#A5D6A7", "#FFFFFF"];
+          const cols = Math.min(4, ideas.length);
+          const created: string[] = [];
+          for (let i = 0; i < ideas.length; i++) {
+            const col = i % cols;
+            const row = Math.floor(i / cols);
+            const { data, error } = await supabase
+              .from("board_elements")
+              .insert({
+                board_id: boardId,
+                type: "sticky_note",
+                x: 50 + col * 220,
+                y: 50 + row * 220,
+                width: 200,
+                height: 200,
+                color: colors[i % colors.length],
+                text: ideas[i],
+                created_by: userId,
+              } as never)
+              .select("id")
+              .single();
+            if (!error && data) created.push((data as { id: string }).id);
+          }
+          return { created, count: created.length };
+        },
+      }),
+      createTextElement: tool({
+        description: "Create a text label element on the board. Useful for titles, headers, or annotations.",
+        inputSchema: z.object({
+          text: z.string().describe("Text content"),
+          x: z.number().describe("X position"),
+          y: z.number().describe("Y position"),
+          color: z.string().describe("Hex color for the text box").optional(),
+        }),
+        execute: async ({ text, x, y, color }) => {
+          const { data, error } = await supabase
+            .from("board_elements")
+            .insert({
+              board_id: boardId,
+              type: "text",
+              x,
+              y,
+              width: Math.max(180, text.length * 9),
+              height: 40,
+              color: color ?? "#3B82F6",
+              text,
+              created_by: userId,
+            } as never)
+            .select("id")
+            .single();
+          if (error) return { error: error.message };
+          return { created: (data as { id: string } | null)?.id };
+        },
+      }),
+      organizeBoard: tool({
+        description: "Rearrange all elements on the board into a neat grid layout. Use when user asks to organize, tidy up, or arrange the board.",
+        inputSchema: z.object({
+          columns: z.number().describe("Number of columns in the grid").optional(),
+        }),
+        execute: async ({ columns }) => {
+          const { data } = await supabase
+            .from("board_elements")
+            .select("id, type, width, height")
+            .eq("board_id", boardId)
+            .neq("type", "connector")
+            .order("created_at", { ascending: true });
+          if (!data || data.length === 0) return { organized: 0 };
+          const items = data as { id: string; type: string; width: number; height: number }[];
+          const cols = columns ?? Math.ceil(Math.sqrt(items.length));
+          const gap = 30;
+          let moved = 0;
+          for (let i = 0; i < items.length; i++) {
+            const col = i % cols;
+            const row = Math.floor(i / cols);
+            const x = 50 + col * (220 + gap);
+            const y = 50 + row * (220 + gap);
+            const { error } = await supabase
+              .from("board_elements")
+              .update({ x, y } as never)
+              .eq("id", items[i].id);
+            if (!error) moved++;
+          }
+          return { organized: moved };
         },
       }),
     },

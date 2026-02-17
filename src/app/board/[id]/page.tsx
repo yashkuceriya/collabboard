@@ -300,12 +300,10 @@ export default function BoardPage() {
     );
   }
 
-  const enableAi = process.env.NEXT_PUBLIC_ENABLE_AI === "true";
-
   return (
     <div className="h-screen w-screen overflow-hidden bg-gray-50 dark:bg-gray-950 flex flex-col relative">
-      {/* AI Chat panel (full app only; not MVP) */}
-      {enableAi && showChatPanel && (
+      {/* AI Chat panel */}
+      {showChatPanel && (
         <ChatPanel
           boardId={boardId}
           user={user}
@@ -356,15 +354,17 @@ export default function BoardPage() {
         </div>
         <div className="flex items-center gap-3">
           <ThemeSwitcher />
-          {enableAi && (
-            <button
-              type="button"
-              onClick={() => setShowChatPanel((v) => !v)}
-              className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all ${showChatPanel ? "bg-blue-500 text-white shadow-sm" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"}`}
-            >
-              AI
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setShowChatPanel((v) => !v)}
+            className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 ${showChatPanel ? "bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-sm shadow-violet-500/25" : "text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 border border-violet-200 dark:border-violet-800/50"}`}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 1l1.5 3.5L13 6l-3.5 1.5L8 11l-1.5-3.5L3 6l3.5-1.5L8 1z" />
+              <path d="M12 10l.75 1.75L14.5 12.5l-1.75.75L12 15l-.75-1.75L9.5 12.5l1.75-.75L12 10z" />
+            </svg>
+            AI
+          </button>
           <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
           <PresenceBar peers={peers} user={user} />
         </div>

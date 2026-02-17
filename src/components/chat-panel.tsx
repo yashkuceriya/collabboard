@@ -52,24 +52,60 @@ export function ChatPanel({ boardId, user, accessToken, onClose }: ChatPanelProp
     [input, isLoading, sendMessage]
   );
 
+  const suggestions = [
+    "Brainstorm ideas about...",
+    "Summarize this board",
+    "Organize the board neatly",
+    "Add 3 sticky notes about...",
+  ];
+
   return (
-    <div className="absolute right-0 top-0 bottom-0 w-80 bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 shadow-lg flex flex-col z-30">
-      <div className="p-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between shrink-0">
-        <h3 className="font-medium text-sm text-gray-900 dark:text-gray-100">AI Board Agent</h3>
+    <div className="absolute right-0 top-0 bottom-0 w-[340px] bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-l border-gray-200/50 dark:border-gray-800/50 shadow-2xl flex flex-col z-30">
+      <div className="px-4 py-3 border-b border-gray-200/50 dark:border-gray-800/50 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center shadow-sm">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 1l1.5 3.5L13 6l-3.5 1.5L8 11l-1.5-3.5L3 6l3.5-1.5L8 1z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="font-semibold text-sm text-gray-900 dark:text-gray-100">AI Assistant</h3>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500">Powered by GPT-4o</p>
+          </div>
+        </div>
         <button
           type="button"
           onClick={onClose}
-          className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-lg leading-none"
+          className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
           aria-label="Close"
         >
-          ×
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M4 4l8 8M12 4l-8 8" />
+          </svg>
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
         {messages.length === 0 && (
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Ask to add sticky notes, shapes, or move things. e.g. &quot;Add a yellow sticky note that says Hello&quot;
-          </p>
+          <div className="space-y-3">
+            <div className="text-center py-4">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">How can I help?</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">I can brainstorm ideas, add elements, organize your board, and more.</p>
+            </div>
+            <div className="space-y-1.5">
+              {suggestions.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => {
+                    setInput(s);
+                  }}
+                  className="w-full text-left text-xs px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 hover:text-violet-700 dark:hover:text-violet-300 border border-gray-100 dark:border-gray-800 transition-colors"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
         {messages.map((m: UIMessage) => {
           const text = getMessageText(m);
@@ -77,34 +113,55 @@ export function ChatPanel({ boardId, user, accessToken, onClose }: ChatPanelProp
           return (
             <div
               key={m.id}
-              className={`text-sm ${m.role === "user" ? "text-right" : "text-left"}`}
+              className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              <span className="text-gray-500 dark:text-gray-400 text-xs">{m.role === "user" ? "You" : "AI"}</span>
-              <div
-                className={
-                  m.role === "user"
-                    ? "inline-block mt-0.5 px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-900 dark:text-blue-200"
-                    : "mt-0.5 px-2 py-1 rounded bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200"
-                }
-              >
-                {text}
+              <div className="max-w-[85%]">
+                <div
+                  className={`text-sm px-3 py-2 rounded-2xl ${
+                    m.role === "user"
+                      ? "bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-br-md"
+                      : "bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-bl-md"
+                  }`}
+                >
+                  {text}
+                </div>
               </div>
             </div>
           );
         })}
         {isLoading && (
-          <p className="text-xs text-gray-500 dark:text-gray-400">Thinking…</p>
+          <div className="flex justify-start">
+            <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl rounded-bl-md px-4 py-3">
+              <div className="flex items-center gap-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: "0ms" }} />
+                <div className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: "150ms" }} />
+                <div className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+              </div>
+            </div>
+          </div>
         )}
       </div>
-      <form onSubmit={onSubmit} className="p-3 border-t border-gray-200 dark:border-gray-800 shrink-0">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask AI to add or edit..."
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          disabled={isLoading || !user}
-        />
+      <form onSubmit={onSubmit} className="px-4 py-3 border-t border-gray-200/50 dark:border-gray-800/50 shrink-0">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Ask AI anything..."
+            className="flex-1 px-3.5 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl text-sm bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-colors"
+            disabled={isLoading || !user}
+          />
+          <button
+            type="submit"
+            disabled={isLoading || !input.trim() || !user}
+            className="px-3 py-2.5 bg-gradient-to-r from-violet-500 to-purple-500 text-white rounded-xl disabled:opacity-40 transition-all hover:from-violet-600 hover:to-purple-600 shadow-sm shadow-violet-500/25"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2L7 9" />
+              <path d="M14 2l-5 12-2-5-5-2 12-5z" />
+            </svg>
+          </button>
+        </div>
       </form>
     </div>
   );

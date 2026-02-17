@@ -14,4 +14,8 @@
 | 8 | User authentication | ✅ | Supabase Auth, `/auth` sign up/sign in |
 | 9 | Deployed and publicly accessible | ✅ | Deploy to Vercel; set `NEXT_PUBLIC_SUPABASE_*` and optional `NEXT_PUBLIC_SITE_URL` (see README). |
 
-**Not MVP:** AI board agent → full app only. Set `NEXT_PUBLIC_ENABLE_AI=true` to show the AI panel.
+**Bonus — AI Feature:**
+
+| # | Feature | Status | Notes |
+|---|---------|--------|-------|
+| 10 | AI Board Assistant | ✅ | GPT-4o-mini powered: brainstorm ideas, create elements, summarize board, auto-organize layout. Always-on in board header. |
