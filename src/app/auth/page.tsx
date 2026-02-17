@@ -48,7 +48,12 @@ export default function AuthPage() {
         router.push("/dashboard");
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      const message = err instanceof Error ? err.message : "An error occurred";
+      if (message.toLowerCase().includes("rate limit") || message.toLowerCase().includes("rate_limit")) {
+        setError("Too many sign-up attempts. Please wait a few minutes and try again.");
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -98,6 +103,7 @@ export default function AuthPage() {
                 className="w-full px-3.5 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm transition-colors placeholder:text-gray-400 dark:placeholder:text-gray-500"
                 placeholder="••••••••"
               />
+              <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">Min 6 characters</p>
             </div>
 
             {success && (

@@ -11,6 +11,7 @@ export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null);
   const [boards, setBoards] = useState<Board[]>([]);
   const [loading, setLoading] = useState(true);
+  const [createError, setCreateError] = useState("");
   const router = useRouter();
 
   useEffect(() => {
@@ -35,6 +36,7 @@ export default function DashboardPage() {
 
   async function createBoard() {
     if (!user) return;
+    setCreateError("");
     const { data, error } = await supabase
       .from("boards")
       .insert({ owner_id: user.id, name: "Untitled Board" } as never)
@@ -42,7 +44,7 @@ export default function DashboardPage() {
       .single();
 
     if (error) {
-      console.error("Error creating board:", error);
+      setCreateError("Could not create board. Please try again.");
       return;
     }
     if (data) {
@@ -65,7 +67,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      <header className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-200/60 dark:border-gray-800/60 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
+      <header className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
         <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100 tracking-tight">CollabBoard</h1>
         <div className="flex items-center gap-4">
           <ThemeSwitcher />
@@ -81,6 +83,11 @@ export default function DashboardPage() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8">
+        {createError && (
+          <div className="mb-4 px-4 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300">
+            {createError}
+          </div>
+        )}
         <div className="flex items-center justify-between mb-8">
           <div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">My Boards</h2>

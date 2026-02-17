@@ -12,6 +12,6 @@
 | 6 | Multiplayer cursors with name labels | ✅ | `usePresence` + canvas draws peer cursors with name label |
 | 7 | Presence awareness (who's online) | ✅ | PresenceBar: "N online" + avatars (you + peers) |
 | 8 | User authentication | ✅ | Supabase Auth, `/auth` sign up/sign in |
-| 9 | Deployed and publicly accessible | ⏳ | Deploy to Vercel + set env vars |
+| 9 | Deployed and publicly accessible | ✅ | Deploy to Vercel; set `NEXT_PUBLIC_SUPABASE_*` and optional `NEXT_PUBLIC_SITE_URL` (see README). |
 
 **Not MVP:** AI board agent → full app only. Set `NEXT_PUBLIC_ENABLE_AI=true` to show the AI panel.

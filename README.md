@@ -66,8 +66,10 @@ Open two browser windows (or one normal + one incognito) with **two different ac
 
 1. Push to GitHub
 2. Import in [vercel.com](https://vercel.com) → New Project
-3. Add environment variables (same as `.env.local`)
+3. Add environment variables: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (required). Optionally `NEXT_PUBLIC_SITE_URL` (your production URL) for email confirmation redirects.
 4. Deploy
+
+**MVP submission:** Ensure the live URL is accessible, sign-up/sign-in work, and Supabase Auth URL Configuration includes your Vercel URL and `https://your-app.vercel.app/auth/callback` in Redirect URLs.
 
 ## Tech Stack
 

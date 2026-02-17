@@ -1,6 +1,6 @@
 "use client";
 
-export type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "text";
+export type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "text" | "connector";
 
 interface ToolbarProps {
   tool: ToolId;
@@ -46,6 +46,14 @@ function IconText() {
     </svg>
   );
 }
+function IconConnector() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 8h8" />
+      <path d="M8 5l3 3-3 3" />
+    </svg>
+  );
+}
 
 const tools: { id: ToolId; label: string; Icon: () => React.JSX.Element }[] = [
   { id: "select", label: "Select", Icon: IconSelect },
@@ -53,18 +61,19 @@ const tools: { id: ToolId; label: string; Icon: () => React.JSX.Element }[] = [
   { id: "rectangle", label: "Rectangle", Icon: IconRectangle },
   { id: "circle", label: "Circle", Icon: IconCircle },
   { id: "text", label: "Text", Icon: IconText },
+  { id: "connector", label: "Arrow", Icon: IconConnector },
 ];
 
 export function Toolbar({ tool, onToolChange }: ToolbarProps) {
   return (
-    <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-20 flex gap-0.5 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md rounded-2xl shadow-xl border border-gray-200/80 dark:border-gray-700/80 px-1.5 py-1">
+    <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-20 flex gap-0.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-2xl shadow-lg border border-gray-200/60 dark:border-gray-700/60 px-2 py-1.5">
       {tools.map((t) => (
         <button
           key={t.id}
           onClick={() => onToolChange(t.id)}
-          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-medium transition-all duration-150 ${
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-150 ${
             tool === t.id
-              ? "bg-blue-500 text-white shadow-md shadow-blue-500/25 dark:shadow-blue-500/20"
+              ? "bg-blue-500 text-white shadow-sm"
               : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"
           }`}
           title={t.label}

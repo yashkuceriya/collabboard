@@ -22,7 +22,7 @@ export default function BoardPage() {
   const [showChatPanel, setShowChatPanel] = useState(false);
   const [elements, setElements] = useState<BoardElement[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tool, setTool] = useState<"select" | "sticky_note" | "rectangle" | "circle" | "text">("select");
+  const [tool, setTool] = useState<"select" | "sticky_note" | "rectangle" | "circle" | "text" | "connector">("select");
   const [openEditorForId, setOpenEditorForId] = useState<string | null>(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
 
@@ -68,12 +68,14 @@ export default function BoardPage() {
   // Presence (cursors + who's online)
   const { peers, broadcastCursor } = usePresence(boardId, user);
 
-  // Create element (centered on click position). Optimistic: show immediately, then replace with server row.
+  // Create element. For rectangle/circle, (x,y,width,height) can be passed (draw-by-drag). Otherwise click creates default size.
   const createElement = useCallback(
     async (
       type: "sticky_note" | "rectangle" | "circle" | "text",
       x: number,
-      y: number
+      y: number,
+      width?: number,
+      height?: number
     ): Promise<string | null> => {
       if (!user) return null;
       const color =
@@ -84,19 +86,21 @@ export default function BoardPage() {
             : type === "circle"
               ? "#10B981"
               : "#f3f4f6";
-      const width = type === "sticky_note" ? 200 : type === "text" ? 180 : 120;
-      const height = type === "sticky_note" ? 200 : type === "text" ? 40 : type === "circle" ? 120 : 100;
+      const w = width ?? (type === "sticky_note" ? 200 : type === "text" ? 180 : 120);
+      const h = height ?? (type === "sticky_note" ? 200 : type === "text" ? 40 : type === "circle" ? 120 : 100);
       const now = new Date().toISOString();
       const tempId = `temp-${Date.now()}`;
+      const elX = width != null ? x : x - w / 2;
+      const elY = height != null ? y : y - h / 2;
 
       const tempEl: BoardElement = {
         id: tempId,
         board_id: boardId,
         type,
-        x: x - width / 2,
-        y: y - height / 2,
-        width,
-        height,
+        x: elX,
+        y: elY,
+        width: w,
+        height: h,
         color,
         text: type === "sticky_note" ? "New note" : "",
         properties: {},
@@ -118,8 +122,8 @@ export default function BoardPage() {
           type,
           x: tempEl.x,
           y: tempEl.y,
-          width,
-          height,
+          width: w,
+          height: h,
           color,
           text: tempEl.text,
           created_by: user.id,
@@ -145,6 +149,69 @@ export default function BoardPage() {
         return row.id;
       }
 
+      setElements((prev) => prev.filter((e) => e.id !== tempId));
+      return null;
+    },
+    [boardId, user, broadcastElement]
+  );
+
+  // Create connector (arrow) between two elements. Arrows move with shapes automatically.
+  const createConnector = useCallback(
+    async (fromId: string, toId: string): Promise<string | null> => {
+      if (!user) return null;
+      const tempId = `temp-${Date.now()}`;
+      const tempEl: BoardElement = {
+        id: tempId,
+        board_id: boardId,
+        type: "connector",
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        color: "#64748b",
+        text: "",
+        properties: { fromId, toId } as Record<string, unknown>,
+        created_by: user.id,
+        updated_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      };
+      setElements((prev) =>
+        [...prev, tempEl].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        )
+      );
+      const { data, error } = await supabase
+        .from("board_elements")
+        .insert({
+          board_id: boardId,
+          type: "connector",
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+          color: "#64748b",
+          text: "",
+          properties: { fromId, toId },
+          created_by: user.id,
+        } as never)
+        .select("*")
+        .single();
+      if (error) {
+        setElements((prev) => prev.filter((e) => e.id !== tempId));
+        return null;
+      }
+      const row = data as BoardElement | null;
+      if (row) {
+        setElements((prev) =>
+          prev
+            .map((e) => (e.id === tempId ? row : e))
+            .sort(
+              (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            )
+        );
+        broadcastElement(row);
+        return row.id;
+      }
       setElements((prev) => prev.filter((e) => e.id !== tempId));
       return null;
     },
@@ -178,14 +245,25 @@ export default function BoardPage() {
     []
   );
 
-  // Delete element (broadcast so other clients update in real time)
+  // Delete element and any connectors attached to it
   const deleteElement = useCallback(
     async (id: string) => {
+      const attachedConnectors = elements.filter(
+        (e) =>
+          e.type === "connector" &&
+          ((e.properties as Record<string, string>)?.fromId === id ||
+            (e.properties as Record<string, string>)?.toId === id)
+      );
+      for (const connector of attachedConnectors) {
+        broadcastElementDeleted(connector.id);
+        setElements((prev) => prev.filter((e) => e.id !== connector.id));
+        await supabase.from("board_elements").delete().eq("id", connector.id);
+      }
       broadcastElementDeleted(id);
       setElements((prev) => prev.filter((e) => e.id !== id));
       await supabase.from("board_elements").delete().eq("id", id);
     },
-    [broadcastElementDeleted]
+    [broadcastElementDeleted, elements]
   );
 
   if (loading) {
@@ -211,11 +289,11 @@ export default function BoardPage() {
       )}
 
       {/* Top bar */}
-      <div className="h-12 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-200/60 dark:border-gray-800/60 flex items-center justify-between px-4 shrink-0 z-10">
+      <div className="h-12 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 flex items-center justify-between px-4 shrink-0 z-10">
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.push("/dashboard")}
-            className="text-sm text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-100 transition-colors rounded-lg px-2 py-1 -ml-1"
           >
             ← Boards
           </button>
@@ -248,10 +326,11 @@ export default function BoardPage() {
         onViewportChange={setViewport}
         tool={tool}
         onToolChange={setTool}
-        onCreate={async (type, x, y) => {
-          const id = await createElement(type, x, y);
+        onCreate={async (type, x, y, width?, height?) => {
+          const id = await createElement(type, x, y, width, height);
           if (type === "text" && id) setOpenEditorForId(id);
         }}
+        onCreateConnector={createConnector}
         onUpdate={updateElement}
         onDelete={deleteElement}
         onCursorMove={broadcastCursor}

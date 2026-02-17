@@ -6,13 +6,16 @@ import { ColorPicker } from "@/components/color-picker";
 import type { BoardElement } from "@/lib/types/database";
 import type { Peer } from "@/hooks/use-presence";
 
+type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "text" | "connector";
+
 interface CanvasProps {
   elements: BoardElement[];
   viewport: { x: number; y: number; zoom: number };
   onViewportChange: (v: { x: number; y: number; zoom: number }) => void;
-  tool: "select" | "sticky_note" | "rectangle" | "circle" | "text";
-  onToolChange: (t: "select" | "sticky_note" | "rectangle" | "circle" | "text") => void;
-  onCreate: (type: "sticky_note" | "rectangle" | "circle" | "text", x: number, y: number) => void | Promise<void>;
+  tool: ToolId;
+  onToolChange: (t: ToolId) => void;
+  onCreate: (type: "sticky_note" | "rectangle" | "circle" | "text", x: number, y: number, width?: number, height?: number) => void | Promise<void>;
+  onCreateConnector?: (fromId: string, toId: string) => void | Promise<void>;
   onUpdate: (id: string, updates: Partial<BoardElement>) => void;
   onDelete: (id: string) => void;
   onCursorMove: (x: number, y: number) => void;
@@ -72,6 +75,37 @@ function clampSize(v: number) {
   return Math.max(MIN_SIZE, v);
 }
 
+const MIN_DRAW_SIZE = 24;
+
+function distanceToSegment(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 1e-6;
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (len * len)));
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+  return Math.hypot(px - projX, py - projY);
+}
+
+function getConnectorEndpoints(
+  el: BoardElement,
+  elements: BoardElement[]
+): { x1: number; y1: number; x2: number; y2: number } | null {
+  if (el.type !== "connector") return null;
+  const props = el.properties as Record<string, string> | undefined;
+  const fromId = props?.fromId;
+  const toId = props?.toId;
+  if (!fromId || !toId) return null;
+  const fromEl = elements.find((e) => e.id === fromId && e.type !== "connector");
+  const toEl = elements.find((e) => e.id === toId && e.type !== "connector");
+  if (!fromEl || !toEl) return null;
+  const x1 = fromEl.x + fromEl.width / 2;
+  const y1 = fromEl.y + fromEl.height / 2;
+  const x2 = toEl.x + toEl.width / 2;
+  const y2 = toEl.y + toEl.height / 2;
+  return { x1, y1, x2, y2 };
+}
+
 export function Canvas({
   elements,
   viewport,
@@ -79,6 +113,7 @@ export function Canvas({
   tool,
   onToolChange,
   onCreate,
+  onCreateConnector,
   onUpdate,
   onDelete,
   onCursorMove,
@@ -112,6 +147,9 @@ export function Canvas({
     width: number;
     height: number;
   } | null>(null);
+  const [drawDraft, setDrawDraft] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
+  const [connectorFromId, setConnectorFromId] = useState<string | null>(null);
+  const [connectorPreview, setConnectorPreview] = useState<{ x: number; y: number } | null>(null);
 
   // When board asks to open editor for a newly created text element, do it once it appears
   useEffect(() => {
@@ -142,20 +180,23 @@ export function Canvas({
     [viewport]
   );
 
-  // Hit test: find element at screen position
+  // Hit test: find element at screen position (shapes first, then connectors by distance to line)
   const hitTest = useCallback(
     (sx: number, sy: number) => {
       const { x, y } = screenToWorld(sx, sy);
-      // Reverse order so topmost (latest) elements are checked first
+      const threshold = 12 / viewport.zoom;
       for (let i = elements.length - 1; i >= 0; i--) {
         const el = elements[i];
-        if (x >= el.x && x <= el.x + el.width && y >= el.y && y <= el.y + el.height) {
+        if (el.type === "connector") {
+          const pts = getConnectorEndpoints(el, elements);
+          if (pts && distanceToSegment(x, y, pts.x1, pts.y1, pts.x2, pts.y2) <= threshold) return el;
+        } else if (x >= el.x && x <= el.x + el.width && y >= el.y && y <= el.y + el.height) {
           return el;
         }
       }
       return null;
     },
-    [elements, screenToWorld]
+    [elements, screenToWorld, viewport.zoom]
   );
 
   // Draw everything
@@ -218,8 +259,9 @@ export function Canvas({
       }
     }
 
-    // Draw elements
+    // Draw elements (skip connectors; they are drawn after)
     for (const el of elements) {
+      if (el.type === "connector") continue;
       const bounds =
         resizing && el.id === resizing.id && resizeDraft
           ? resizeDraft
@@ -313,10 +355,91 @@ export function Canvas({
       ctx.restore();
     }
 
-    // Resize handles (when selected and not resizing)
+    // Draw connectors (arrows) — they move with shapes via current element positions
+    const strokeColor = isDark ? "#94a3b8" : "#64748b";
+    const arrowLen = 14 / viewport.zoom;
+    for (const el of elements) {
+      if (el.type !== "connector") continue;
+      const pts = getConnectorEndpoints(el, elements);
+      if (!pts) continue;
+      ctx.save();
+      ctx.strokeStyle = el.id === selectedId ? "#3b82f6" : strokeColor;
+      ctx.lineWidth = (el.id === selectedId ? 2.5 : 2) / viewport.zoom;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      ctx.moveTo(pts.x1, pts.y1);
+      ctx.lineTo(pts.x2, pts.y2);
+      ctx.stroke();
+      const angle = Math.atan2(pts.y2 - pts.y1, pts.x2 - pts.x1);
+      ctx.fillStyle = el.id === selectedId ? "#3b82f6" : strokeColor;
+      ctx.beginPath();
+      ctx.moveTo(pts.x2, pts.y2);
+      ctx.lineTo(pts.x2 - arrowLen * Math.cos(angle - 0.4), pts.y2 - arrowLen * Math.sin(angle - 0.4));
+      ctx.lineTo(pts.x2 - arrowLen * Math.cos(angle + 0.4), pts.y2 - arrowLen * Math.sin(angle + 0.4));
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Draw-by-drag preview (rectangle / circle)
+    if (drawDraft && (tool === "rectangle" || tool === "circle")) {
+      const x = Math.min(drawDraft.startX, drawDraft.currentX);
+      const y = Math.min(drawDraft.startY, drawDraft.currentY);
+      const w = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentX - drawDraft.startX));
+      const h = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentY - drawDraft.startY));
+      ctx.save();
+      ctx.strokeStyle = tool === "rectangle" ? "#42A5F5" : "#10B981";
+      ctx.lineWidth = 2 / viewport.zoom;
+      ctx.setLineDash([6 / viewport.zoom, 4 / viewport.zoom]);
+      if (tool === "rectangle") {
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, 4);
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Connector drag preview
+    if (connectorFromId && connectorPreview) {
+      const fromEl = elements.find((e) => e.id === connectorFromId && e.type !== "connector");
+      if (fromEl) {
+        const x1 = fromEl.x + fromEl.width / 2;
+        const y1 = fromEl.y + fromEl.height / 2;
+        ctx.save();
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 2 / viewport.zoom;
+        ctx.setLineDash([6 / viewport.zoom, 4 / viewport.zoom]);
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(connectorPreview.x, connectorPreview.y);
+        ctx.stroke();
+        const angle = Math.atan2(connectorPreview.y - y1, connectorPreview.x - x1);
+        ctx.fillStyle = strokeColor;
+        ctx.beginPath();
+        ctx.moveTo(connectorPreview.x, connectorPreview.y);
+        ctx.lineTo(
+          connectorPreview.x - arrowLen * Math.cos(angle - 0.4),
+          connectorPreview.y - arrowLen * Math.sin(angle - 0.4)
+        );
+        ctx.lineTo(
+          connectorPreview.x - arrowLen * Math.cos(angle + 0.4),
+          connectorPreview.y - arrowLen * Math.sin(angle + 0.4)
+        );
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // Resize handles (when selected and not resizing; only for non-connector elements)
     if (selectedId && !resizing) {
       const el = elements.find((e) => e.id === selectedId);
-      if (el) {
+      if (el && el.type !== "connector") {
         const handles = getResizeHandles(el);
         ctx.fillStyle = "#3b82f6";
         ctx.strokeStyle = isDark ? "#1f2937" : "#fff";
@@ -361,7 +484,7 @@ export function Canvas({
       ctx.fillText(name, screen.x + 14, screen.y + 25);
       ctx.restore();
     });
-  }, [elements, viewport, selectedId, resizing, resizeDraft, peers, worldToScreen, isDark]);
+  }, [elements, viewport, selectedId, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, tool, connectorFromId, connectorPreview]);
 
   // Redraw when state changes (no continuous rAF loop)
   useEffect(() => {
@@ -415,12 +538,21 @@ export function Canvas({
         setPanning(true);
         panStartRef.current = { x: e.clientX - viewport.x, y: e.clientY - viewport.y };
       }
-    } else if (
-      tool === "sticky_note" ||
-      tool === "rectangle" ||
-      tool === "circle" ||
-      tool === "text"
-    ) {
+    } else if (tool === "connector") {
+      const world = screenToWorld(sx, sy);
+      const hit = hitTest(sx, sy);
+      if (hit && hit.type !== "connector") {
+        setConnectorFromId(hit.id);
+        setConnectorPreview({ x: world.x, y: world.y });
+      } else {
+        setSelectedId(null);
+        setPanning(true);
+        panStartRef.current = { x: e.clientX - viewport.x, y: e.clientY - viewport.y };
+      }
+    } else if (tool === "rectangle" || tool === "circle") {
+      const world = screenToWorld(sx, sy);
+      setDrawDraft({ startX: world.x, startY: world.y, currentX: world.x, currentY: world.y });
+    } else if (tool === "sticky_note" || tool === "text") {
       const world = screenToWorld(sx, sy);
       void onCreate(tool, world.x, world.y);
       onToolChange("select");
@@ -438,9 +570,16 @@ export function Canvas({
     onCursorMove(world.x, world.y);
 
     // Hover detection for cursor feedback
-    if (!dragging && !panning && !resizing && tool === "select") {
+    if (!dragging && !panning && !resizing && !drawDraft && !connectorFromId && tool === "select") {
       const hit = hitTest(sx, sy);
       setHoveredId(hit?.id ?? null);
+    }
+
+    if (drawDraft) {
+      setDrawDraft((d) => (d ? { ...d, currentX: world.x, currentY: world.y } : null));
+    }
+    if (connectorFromId) {
+      setConnectorPreview({ x: world.x, y: world.y });
     }
 
     if (panning) {
@@ -523,7 +662,28 @@ export function Canvas({
     }
   }
 
-  function handleMouseUp() {
+  function handleMouseUp(e?: React.MouseEvent) {
+    if (drawDraft && (tool === "rectangle" || tool === "circle")) {
+      const x = Math.min(drawDraft.startX, drawDraft.currentX);
+      const y = Math.min(drawDraft.startY, drawDraft.currentY);
+      const w = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentX - drawDraft.startX));
+      const h = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentY - drawDraft.startY));
+      void onCreate(tool, x, y, w, h);
+      onToolChange("select");
+      setDrawDraft(null);
+    }
+    if (connectorFromId) {
+      if (canvasRef.current && e) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+        if (hit && hit.id !== connectorFromId && hit.type !== "connector" && onCreateConnector) {
+          void onCreateConnector(connectorFromId, hit.id);
+          onToolChange("select");
+        }
+      }
+      setConnectorFromId(null);
+      setConnectorPreview(null);
+    }
     if (resizing && resizeDraft) {
       onUpdate(resizing.id, resizeDraft);
       setResizing(null);
@@ -595,6 +755,7 @@ export function Canvas({
     currentUserId &&
     selectedElement &&
     selectedElement.created_by === currentUserId;
+  const showColorPicker = selectedElement && selectedElement.type !== "connector";
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Delete" || e.key === "Backspace") {
@@ -611,6 +772,7 @@ export function Canvas({
 
   // Compute cursor style
   const cursorStyle = (() => {
+    if (drawDraft || connectorFromId) return "crosshair";
     if (tool !== "select") return "crosshair";
     if (resizing) {
       const map: Record<ResizeHandle, string> = {
@@ -645,16 +807,16 @@ export function Canvas({
       />
 
       {/* Empty board hint */}
-      {elements.length === 0 && !dragging && !panning && (
+      {elements.length === 0 && !dragging && !panning && !drawDraft && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-          <div className="text-center space-y-3 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md rounded-2xl px-10 py-8 border border-gray-200/60 dark:border-gray-700/60 shadow-xl shadow-gray-200/30 dark:shadow-black/20">
+          <div className="text-center space-y-3 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md rounded-2xl px-10 py-8 border border-gray-200/50 dark:border-gray-700/50 shadow-lg">
             <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center mx-auto">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-blue-500 dark:text-blue-400" strokeLinecap="round">
                 <path d="M10 4v12M4 10h12" />
               </svg>
             </div>
             <p className="text-base font-semibold text-gray-700 dark:text-gray-200">Your board is empty</p>
-            <p className="text-sm text-gray-400 dark:text-gray-500 max-w-[220px]">Pick a tool from the toolbar below and click anywhere to start creating</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 max-w-[260px]">Pick a tool: drag to draw rectangles or circles; click for sticky notes; use Arrow to connect shapes.</p>
           </div>
         </div>
       )}
@@ -681,9 +843,9 @@ export function Canvas({
         </div>
       )}
 
-      {/* Color picker — floating above selected element */}
-      {selectedId && !editingId && selectedElement && (() => {
-        const el = selectedElement;
+      {/* Color picker — floating above selected element (not for connectors) */}
+      {selectedId && !editingId && showColorPicker && (() => {
+        const el = selectedElement!;
         const screen = worldToScreen(el.x + el.width / 2, el.y);
         return (
           <div
