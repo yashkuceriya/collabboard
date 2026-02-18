@@ -7,9 +7,11 @@ import type { Board } from "@/lib/types/database";
 import type { User } from "@supabase/supabase-js";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 
+export type BoardWithAccess = Board & { access: "owner" | "shared" };
+
 export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null);
-  const [boards, setBoards] = useState<Board[]>([]);
+  const [boards, setBoards] = useState<BoardWithAccess[]>([]);
   const [loading, setLoading] = useState(true);
   const [createError, setCreateError] = useState("");
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
@@ -19,12 +21,23 @@ export default function DashboardPage() {
   const pathname = usePathname();
 
   async function fetchMyBoards(userId: string) {
-    const { data } = await supabase
-      .from("boards")
-      .select("*")
-      .eq("owner_id", userId)
-      .order("created_at", { ascending: false });
-    setBoards(data || []);
+    const ownedRes = await supabase.from("boards").select("*").eq("owner_id", userId).order("created_at", { ascending: false });
+    const owned = (ownedRes.data || []) as Board[];
+    let shared: Board[] = [];
+    const membersRes = await supabase.from("board_members").select("board_id").eq("user_id", userId);
+    if (!membersRes.error && membersRes.data?.length) {
+      const sharedBoardIds = new Set((membersRes.data || []).map((r: { board_id: string }) => r.board_id));
+      const sharedIdsToFetch = [...sharedBoardIds].filter((id) => !owned.some((b) => b.id === id));
+      if (sharedIdsToFetch.length > 0) {
+        const { data } = await supabase.from("boards").select("*").in("id", sharedIdsToFetch).order("created_at", { ascending: false });
+        shared = (data || []) as Board[];
+      }
+    }
+    const withAccess: BoardWithAccess[] = [
+      ...owned.map((b) => ({ ...b, access: "owner" as const })),
+      ...shared.map((b) => ({ ...b, access: "shared" as const })),
+    ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    setBoards(withAccess);
   }
 
   useEffect(() => {
@@ -148,8 +161,10 @@ export default function DashboardPage() {
         )}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">My Boards</h2>
-            <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">Your boards · {boards.length} board{boards.length !== 1 ? "s" : ""}</p>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">Boards</h2>
+            <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">
+              {boards.filter((b) => b.access === "owner").length} owned · {boards.filter((b) => b.access === "shared").length} shared with you
+            </p>
           </div>
           <button
             onClick={createBoard}
@@ -206,21 +221,23 @@ export default function DashboardPage() {
                         </svg>
                       </div>
                       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingBoardId(board.id);
-                            setEditName(board.name);
-                          }}
-                          className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
-                          title="Rename board"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
-                            <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" />
-                          </svg>
-                        </button>
-                        {board.owner_id === user?.id && (
+                        {board.access === "owner" && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingBoardId(board.id);
+                              setEditName(board.name);
+                            }}
+                            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+                            title="Rename board"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
+                              <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" />
+                            </svg>
+                          </button>
+                        )}
+                        {board.access === "owner" && (
                           <button
                             type="button"
                             onClick={(e) => {
@@ -252,7 +269,12 @@ export default function DashboardPage() {
                         className="w-full font-semibold text-gray-800 dark:text-gray-100 bg-transparent border-b-2 border-blue-500 outline-none pb-0.5"
                       />
                     ) : (
-                      <h3 className="font-semibold text-gray-800 dark:text-gray-100 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{board.name}</h3>
+                      <h3 className="font-semibold text-gray-800 dark:text-gray-100 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center gap-2">
+                        {board.name}
+                        {board.access === "shared" && (
+                          <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">Shared</span>
+                        )}
+                      </h3>
                     )}
                     <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5">
                       {new Date(board.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}

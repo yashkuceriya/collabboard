@@ -10,6 +10,7 @@ import { Toolbar } from "@/components/toolbar";
 import { PresenceBar } from "@/components/presence-bar";
 import { ChatPanel } from "@/components/chat-panel";
 import { ThemeSwitcher } from "@/components/theme-switcher";
+import { ShareBoardModal } from "@/components/share-board-modal";
 import { useRealtimeElements } from "@/hooks/use-realtime-elements";
 import { usePresence } from "@/hooks/use-presence";
 import { sortElementsByOrder } from "@/lib/sort-elements";
@@ -27,8 +28,10 @@ export default function BoardPage() {
   const [openEditorForId, setOpenEditorForId] = useState<string | null>(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
   const [boardName, setBoardName] = useState("Untitled Board");
+  const [boardOwnerId, setBoardOwnerId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [showShareModal, setShowShareModal] = useState(false);
   const searchParams = useSearchParams();
   const perfMode = searchParams.get("perf") === "1";
 
@@ -46,10 +49,17 @@ export default function BoardPage() {
 
       const { data: boardData } = await supabase
         .from("boards")
-        .select("name")
+        .select("name, owner_id")
         .eq("id", boardId)
         .single();
-      if (boardData) setBoardName((boardData as { name: string }).name);
+      if (boardData) {
+        const b = boardData as { name: string; owner_id: string };
+        setBoardName(b.name);
+        setBoardOwnerId(b.owner_id);
+      } else {
+        router.replace("/dashboard");
+        return;
+      }
 
       const { data } = await supabase
         .from("board_elements")
@@ -342,6 +352,17 @@ export default function BoardPage() {
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-gray-50 dark:bg-gray-950 flex flex-col relative">
+      {/* Share modal */}
+      {showShareModal && user && (
+        <ShareBoardModal
+          boardId={boardId}
+          boardName={boardName}
+          currentUser={user}
+          accessToken={accessToken}
+          onClose={() => setShowShareModal(false)}
+        />
+      )}
+
       {/* AI Chat panel */}
       {showChatPanel && (
         <ChatPanel
@@ -393,6 +414,20 @@ export default function BoardPage() {
           )}
         </div>
         <div className="flex items-center gap-3">
+          {user && boardOwnerId === user.id && (
+            <button
+              type="button"
+              onClick={() => setShowShareModal(true)}
+              className="text-sm px-3 py-1.5 rounded-lg font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 flex items-center gap-1.5"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" />
+                <polyline points="16 6 12 2 8 6" />
+                <line x1="12" y1="2" x2="12" y2="15" />
+              </svg>
+              Share
+            </button>
+          )}
           <ThemeSwitcher />
           <button
             type="button"

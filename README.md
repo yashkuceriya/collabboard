@@ -20,7 +20,8 @@ pnpm install
 1. **Create project:** [supabase.com](https://supabase.com) → New Project → choose org, name, password, region.
 2. **Run schema:** Dashboard → SQL Editor → New Query → paste contents of `supabase/schema.sql` → Run.  
    This creates `boards`, `board_elements`, RLS (including **shared board access**: any authenticated user can read any board for collaboration), realtime on `board_elements`, and `updated_at` trigger.  
-   **If you already ran an older schema:** run `supabase/migrations/20250216_shared_board_access.sql` in SQL Editor so multiple users can open the same board and sync.
+   **If you already ran an older schema:** run `supabase/migrations/20250216_shared_board_access.sql` in SQL Editor so multiple users can open the same board and sync.  
+   **Board sharing (optional):** Run `supabase/migrations/20250218000000_board_members_and_sharing.sql` in SQL Editor. This adds a `board_members` table and RLS so boards are visible only to the owner and people they share with. You can then use the **Share** button on a board (owner only) to invite by email (Editor or Viewer). For invite-by-email to work, set `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` (Settings → API → service_role key; keep it server-side only).
 3. **Enable Auth:** Authentication → Providers → **Email** → Enable.  
    **Email confirmation (e.g. on Vercel):** Dashboard → **Authentication** → **URL Configuration**. Set **Site URL** to your app URL (e.g. `https://your-app.vercel.app`). Add **Redirect URLs**: `https://your-app.vercel.app/auth/callback` (and `http://localhost:3000/auth/callback` for local dev). Then the sign-up confirmation email will send users to your app after they confirm.
 4. **Enable Realtime (required for presence + cursors):**  
@@ -44,6 +45,7 @@ Edit `.env.local`:
 - `NEXT_PUBLIC_SITE_URL` — optional; your app URL in production (e.g. `https://your-app.vercel.app`) so sign-up confirmation emails redirect to your deployment. Vercel sets `NEXT_PUBLIC_VERCEL_URL` automatically.
 - `NEXT_PUBLIC_ENABLE_AI=true` — optional; enables AI board agent (full app)
 - `OPENAI_API_KEY` — only if AI is enabled
+- `SUPABASE_SERVICE_ROLE_KEY` — optional; required for **Share → Invite by email** (get from Supabase Settings → API → service_role; never expose in client)
 
 ### 4. Run locally
 
