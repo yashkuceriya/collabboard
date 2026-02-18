@@ -29,7 +29,9 @@ export async function POST(
   if (!board || board.owner_id !== user.id) return NextResponse.json({ error: "Forbidden: only the board owner can share" }, { status: 403 });
 
   if (!supabaseServiceKey) return NextResponse.json({ error: "Server configuration: SUPABASE_SERVICE_ROLE_KEY not set" }, { status: 503 });
-  const admin = createClient<Database>(supabaseUrl, supabaseServiceKey);
+  const admin = createClient<Database>(supabaseUrl, supabaseServiceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
   const rpcResult = await (admin as unknown as { rpc: (n: string, a: { user_email: string }) => Promise<{ data: string | null; error: unknown }> }).rpc("get_user_id_by_email", { user_email: trimmed });
   const { data: userId, error: rpcError } = rpcResult;
