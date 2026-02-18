@@ -55,13 +55,13 @@ function IconConnector() {
   );
 }
 
-const tools: { id: ToolId; label: string; shortcut: string; Icon: () => React.JSX.Element }[] = [
-  { id: "select", label: "Select", shortcut: "V", Icon: IconSelect },
-  { id: "sticky_note", label: "Sticky Note", shortcut: "N", Icon: IconStickyNote },
-  { id: "rectangle", label: "Rectangle", shortcut: "R", Icon: IconRectangle },
-  { id: "circle", label: "Circle", shortcut: "O", Icon: IconCircle },
-  { id: "text", label: "Text", shortcut: "T", Icon: IconText },
-  { id: "connector", label: "Arrow", shortcut: "A", Icon: IconConnector },
+const tools: { id: ToolId; label: string; shortcut: string; tooltip: string; Icon: () => React.JSX.Element }[] = [
+  { id: "select", label: "Select", shortcut: "V", tooltip: "Select and pan (drag empty space)", Icon: IconSelect },
+  { id: "sticky_note", label: "Sticky Note", shortcut: "N", tooltip: "Add a sticky note", Icon: IconStickyNote },
+  { id: "rectangle", label: "Rectangle", shortcut: "R", tooltip: "Draw a rectangle", Icon: IconRectangle },
+  { id: "circle", label: "Circle", shortcut: "O", tooltip: "Draw a circle", Icon: IconCircle },
+  { id: "text", label: "Text", shortcut: "T", tooltip: "Add text", Icon: IconText },
+  { id: "connector", label: "Connect", shortcut: "A", tooltip: "Click two shapes to connect them with an arrow", Icon: IconConnector },
 ];
 
 export function Toolbar({ tool, onToolChange }: ToolbarProps) {
@@ -76,7 +76,7 @@ export function Toolbar({ tool, onToolChange }: ToolbarProps) {
               ? "bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-sm shadow-blue-500/25"
               : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"
           }`}
-          title={`${t.label} (${t.shortcut})`}
+          title={t.tooltip}
         >
           <t.Icon />
           <span className="hidden sm:inline">{t.label}</span>

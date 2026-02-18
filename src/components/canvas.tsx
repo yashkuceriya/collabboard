@@ -620,8 +620,9 @@ export function Canvas({
         setConnectorPreview({ x: world.x, y: world.y });
       } else {
         setSelectedId(null);
-        setPanning(true);
-        panStartRef.current = { x: e.clientX - viewport.x, y: e.clientY - viewport.y };
+        setConnectorFromId(null);
+        setConnectorPreview(null);
+        // Don't start panning — use Select tool to pan. Keeps connector mode clear.
       }
     } else if (tool === "rectangle" || tool === "circle") {
       const world = screenToWorld(sx, sy);
@@ -781,14 +782,24 @@ export function Canvas({
       const rect = canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
-      const delta = e.deltaY > 0 ? 0.9 : 1.1;
-      const newZoom = Math.min(Math.max(viewport.zoom * delta, 0.1), 5);
-      const ratio = newZoom / viewport.zoom;
-      onViewportChange({
-        zoom: newZoom,
-        x: sx - (sx - viewport.x) * ratio,
-        y: sy - (sy - viewport.y) * ratio,
-      });
+      const isPinchZoom = e.ctrlKey || e.metaKey;
+      if (isPinchZoom) {
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        const newZoom = Math.min(Math.max(viewport.zoom * delta, 0.1), 5);
+        const ratio = newZoom / viewport.zoom;
+        onViewportChange({
+          zoom: newZoom,
+          x: sx - (sx - viewport.x) * ratio,
+          y: sy - (sy - viewport.y) * ratio,
+        });
+      } else {
+        // Two-finger swipe → pan
+        onViewportChange({
+          ...viewport,
+          x: viewport.x - e.deltaX,
+          y: viewport.y - e.deltaY,
+        });
+      }
     },
     [viewport, onViewportChange]
   );
@@ -879,6 +890,13 @@ export function Canvas({
 
   return (
     <div ref={containerRef} className="flex-1 relative" tabIndex={0} onKeyDown={handleKeyDown}>
+      {/* Connector tool hint — makes it clear arrows connect shapes */}
+      {tool === "connector" && (
+        <div className="absolute bottom-14 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-xl bg-gray-900/90 dark:bg-gray-100/90 text-white dark:text-gray-900 text-xs font-medium shadow-lg border border-gray-700/50 dark:border-gray-300/50">
+          Click a shape, then another to connect them with an arrow
+        </div>
+      )}
+
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full"
@@ -945,32 +963,46 @@ export function Canvas({
         </div>
       )}
 
-      {/* Delete button — only for elements you created */}
-      {canDeleteSelected && (
-        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              onDelete(selectedId!);
-              setSelectedId(null);
-            }}
-            className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 hover:bg-red-200 dark:text-red-200 dark:bg-red-900/40 dark:hover:bg-red-900/60 rounded-lg shadow border border-red-200 dark:border-red-800"
+      {/* Delete button — tethered to selected element (only for elements you created) */}
+      {canDeleteSelected && selectedElement && (() => {
+        const el = selectedElement;
+        const anchor = worldToScreen(el.x + el.width + 8, el.y - 4);
+        return (
+          <div
+            className="absolute z-20 flex items-center gap-2"
+            style={{ left: anchor.x, top: anchor.y, transform: "translate(0, -50%)" }}
           >
-            Delete
-          </button>
-          <span className="text-xs text-gray-500 dark:text-gray-400">or press Delete key</span>
-        </div>
-      )}
-      {selectedId && !editingId && !canDeleteSelected && selectedElement && (
-        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm px-3 py-1.5 rounded-lg shadow border border-gray-200 dark:border-gray-700">
-          <span className="text-xs text-gray-500 dark:text-gray-400">Only the creator can delete this</span>
-        </div>
-      )}
+            <button
+              type="button"
+              onClick={() => {
+                onDelete(selectedId!);
+                setSelectedId(null);
+              }}
+              className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 hover:bg-red-200 dark:text-red-200 dark:bg-red-900/40 dark:hover:bg-red-900/60 rounded-lg shadow-md border border-red-200 dark:border-red-800 whitespace-nowrap"
+            >
+              Delete
+            </button>
+            <span className="text-xs text-gray-500 dark:text-gray-400 hidden sm:inline">or Delete key</span>
+          </div>
+        );
+      })()}
+      {selectedId && !editingId && !canDeleteSelected && selectedElement && (() => {
+        const el = selectedElement;
+        const anchor = worldToScreen(el.x + el.width + 8, el.y - 4);
+        return (
+          <div
+            className="absolute z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm px-3 py-1.5 rounded-lg shadow border border-gray-200 dark:border-gray-700"
+            style={{ left: anchor.x, top: anchor.y, transform: "translate(0, -50%)" }}
+          >
+            <span className="text-xs text-gray-500 dark:text-gray-400">Only the creator can delete this</span>
+          </div>
+        );
+      })()}
 
-      {/* Color picker — floating above selected element (not for connectors) */}
+      {/* Color picker — to the right of selected element so it doesn't cover content (not for connectors) */}
       {selectedId && !editingId && showColorPicker && (() => {
         const el = selectedElement!;
-        const screen = worldToScreen(el.x + el.width / 2, el.y);
+        const anchor = worldToScreen(el.x + el.width + 16, el.y + el.height / 2);
         const props = el.properties as Record<string, string> | undefined;
         const currentTextColor = props?.textColor || "";
         const currentFontSize = (props?.fontSize || "medium") as "small" | "medium" | "large";
@@ -979,9 +1011,9 @@ export function Canvas({
           <div
             className="absolute z-30"
             style={{
-              left: screen.x,
-              top: screen.y - 115,
-              transform: "translateX(-50%)",
+              left: anchor.x,
+              top: anchor.y,
+              transform: "translate(0, -50%)",
             }}
           >
             <ColorPicker
