@@ -95,14 +95,24 @@ export function useRealtimeElements(boardId: string, setElements: SetElements) {
         const raw = (payload && typeof payload === "object" && "payload" in payload
           ? (payload as { payload: Record<string, unknown> }).payload
           : payload) as Record<string, unknown>;
-        if (raw?.id) addToState(normalizeRow(raw));
+        if (raw?.id) {
+          if (typeof raw._ts === "number" && typeof window !== "undefined" && window.location.search.includes("perf=1")) {
+            console.log("[perf] object sync latency (ms):", Date.now() - raw._ts);
+          }
+          const { _ts: _, ...rest } = raw;
+          addToState(normalizeRow(rest));
+        }
       })
       .on("broadcast", { event: "element_updated" }, (payload: unknown) => {
         const raw = (payload && typeof payload === "object" && "payload" in payload
           ? (payload as { payload: Record<string, unknown> }).payload
           : payload) as Record<string, unknown>;
         if (raw?.id) {
-          const updated = normalizeRow(raw);
+          if (typeof raw._ts === "number" && typeof window !== "undefined" && window.location.search.includes("perf=1")) {
+            console.log("[perf] object sync (update) latency (ms):", Date.now() - raw._ts);
+          }
+          const { _ts: __, ...rest } = raw;
+          const updated = normalizeRow(rest);
           setElementsRef.current((prev) =>
             prev.map((e) => (e.id === updated.id ? { ...e, ...updated } : e))
           );
@@ -134,7 +144,7 @@ export function useRealtimeElements(boardId: string, setElements: SetElements) {
       ch.send({
         type: "broadcast",
         event: "element_added",
-        payload: element,
+        payload: { ...element, _ts: Date.now() } as Record<string, unknown>,
       });
     },
     []
@@ -154,17 +164,16 @@ export function useRealtimeElements(boardId: string, setElements: SetElements) {
     (id: string, updates: Partial<BoardElement>) => {
       const ch = channelRef.current;
       if (!ch) return;
-      // Send the full element so the receiver can normalise it
       setElementsRef.current((prev) => {
         const el = prev.find((e) => e.id === id);
         if (el) {
           ch.send({
             type: "broadcast",
             event: "element_updated",
-            payload: { ...el, ...updates },
+            payload: { ...el, ...updates, _ts: Date.now() } as Record<string, unknown>,
           });
         }
-        return prev; // no state change
+        return prev;
       });
     },
     []

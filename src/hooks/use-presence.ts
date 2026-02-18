@@ -22,6 +22,7 @@ type CursorPayload = {
   user_email: string;
   x: number;
   y: number;
+  ts?: number; // client timestamp for latency measurement
 };
 
 function buildPresenceList(
@@ -108,6 +109,10 @@ export function usePresence(boardId: string, user: User | null) {
             ? (payload as { payload: CursorPayload }).payload
             : payload) as CursorPayload;
           if (p?.user_id != null && typeof p.x === "number" && typeof p.y === "number") {
+            if (typeof p.ts === "number" && typeof window !== "undefined" && window.location.search.includes("perf=1")) {
+              const latency = Date.now() - p.ts;
+              console.log("[perf] cursor sync latency (ms):", latency);
+            }
             cursorMapRef.current = {
               ...cursorMapRef.current,
               [p.user_id]: { x: p.x, y: p.y },
@@ -159,6 +164,7 @@ export function usePresence(boardId: string, user: User | null) {
           user_email: user.email ?? "Anonymous",
           x,
           y,
+          ts: now,
         },
       });
     },

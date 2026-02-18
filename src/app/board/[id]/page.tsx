@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import type { BoardElement } from "@/lib/types/database";
 import type { User } from "@supabase/supabase-js";
@@ -28,6 +28,8 @@ export default function BoardPage() {
   const [boardName, setBoardName] = useState("Untitled Board");
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const searchParams = useSearchParams();
+  const perfMode = searchParams.get("perf") === "1";
 
   // Load user, session, and initial elements (merge with any realtime updates that arrived first)
   useEffect(() => {
@@ -393,6 +395,7 @@ export default function BoardPage() {
         currentUserId={user?.id ?? null}
         openEditorForId={openEditorForId}
         onOpenEditorFulfilled={() => setOpenEditorForId(null)}
+        perfMode={perfMode}
       />
     </div>
   );

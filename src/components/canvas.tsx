@@ -26,6 +26,8 @@ interface CanvasProps {
   /** When set, open inline editor for this element id once it appears in elements */
   openEditorForId?: string | null;
   onOpenEditorFulfilled?: () => void;
+  /** Show FPS meter (for ?perf=1) */
+  perfMode?: boolean;
 }
 
 // Color name labels for cursors
@@ -203,9 +205,12 @@ export function Canvas({
   currentUserId,
   openEditorForId,
   onOpenEditorFulfilled,
+  perfMode = false,
 }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const drawCountRef = useRef(0);
+  const [fps, setFps] = useState(0);
   const { effective: themeMode } = useTheme();
   const isDark = themeMode === "dark";
   const [dragging, setDragging] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null);
@@ -321,6 +326,14 @@ export function Canvas({
       }
     }
 
+    // Viewport culling: only draw elements that intersect the visible area (helps 500+ objects)
+    const vw = rect.width / viewport.zoom;
+    const vh = rect.height / viewport.zoom;
+    const vx = -viewport.x / viewport.zoom;
+    const vy = -viewport.y / viewport.zoom;
+    const inView = (ex: number, ey: number, ew: number, eh: number) =>
+      ex + ew >= vx && ex <= vx + vw && ey + eh >= vy && ey <= vy + vh;
+
     // Draw elements (skip connectors; they are drawn after)
     for (const el of elements) {
       if (el.type === "connector") continue;
@@ -329,6 +342,7 @@ export function Canvas({
           ? resizeDraft
           : { x: el.x, y: el.y, width: el.width, height: el.height };
       const { x, y, width, height } = bounds;
+      if (!inView(x, y, width, height)) continue;
 
       ctx.save();
 
@@ -430,13 +444,18 @@ export function Canvas({
       ctx.restore();
     }
 
-    // Draw connectors (arrows) — they move with shapes via current element positions
+    // Draw connectors (arrows) — cull if line bbox is out of view
     const strokeColor = isDark ? "#94a3b8" : "#64748b";
     const arrowLen = 14 / viewport.zoom;
     for (const el of elements) {
       if (el.type !== "connector") continue;
       const pts = getConnectorEndpoints(el, elements);
       if (!pts) continue;
+      const cx = Math.min(pts.x1, pts.x2);
+      const cy = Math.min(pts.y1, pts.y2);
+      const cw = Math.abs(pts.x2 - pts.x1);
+      const ch = Math.abs(pts.y2 - pts.y1);
+      if (!inView(cx, cy, cw || 1, ch || 1)) continue;
       ctx.save();
       ctx.strokeStyle = el.id === selectedId ? "#3b82f6" : strokeColor;
       ctx.lineWidth = (el.id === selectedId ? 2.5 : 2) / viewport.zoom;
@@ -558,7 +577,18 @@ export function Canvas({
       ctx.fillText(name, screen.x + 14, screen.y + 25);
       ctx.restore();
     });
-  }, [elements, viewport, selectedId, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, tool, connectorFromId, connectorPreview]);
+    if (perfMode) drawCountRef.current++;
+  }, [elements, viewport, selectedId, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, tool, connectorFromId, connectorPreview, perfMode]);
+
+  // FPS sampling when perf mode is on
+  useEffect(() => {
+    if (!perfMode) return;
+    const id = setInterval(() => {
+      setFps(drawCountRef.current);
+      drawCountRef.current = 0;
+    }, 1000);
+    return () => clearInterval(id);
+  }, [perfMode]);
 
   // Redraw when state changes (no continuous rAF loop)
   useEffect(() => {
@@ -890,6 +920,12 @@ export function Canvas({
 
   return (
     <div ref={containerRef} className="flex-1 relative" tabIndex={0} onKeyDown={handleKeyDown}>
+      {/* Perf overlay: FPS (add ?perf=1 to board URL) */}
+      {perfMode && (
+        <div className="absolute top-3 left-3 z-50 px-2.5 py-1.5 rounded-lg bg-gray-900/90 text-green-400 font-mono text-sm tabular-nums">
+          FPS: {fps}
+        </div>
+      )}
       {/* Connector tool hint — makes it clear arrows connect shapes */}
       {tool === "connector" && (
         <div className="absolute bottom-14 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-xl bg-gray-900/90 dark:bg-gray-100/90 text-white dark:text-gray-900 text-xs font-medium shadow-lg border border-gray-700/50 dark:border-gray-300/50">
