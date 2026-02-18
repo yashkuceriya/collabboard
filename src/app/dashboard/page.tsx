@@ -84,7 +84,9 @@ export default function DashboardPage() {
       .single();
 
     if (error) {
-      setCreateError("Could not create board. Please try again.");
+      console.error("[createBoard]", error);
+      const msg = error.message || "Could not create board. Please try again.";
+      setCreateError(msg);
       return;
     }
     if (data) {
