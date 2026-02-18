@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import type { Board } from "@/lib/types/database";
 import type { User } from "@supabase/supabase-js";
 import { ThemeSwitcher } from "@/components/theme-switcher";
@@ -16,26 +16,50 @@ export default function DashboardPage() {
   const [editName, setEditName] = useState("");
   const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
   const router = useRouter();
+  const pathname = usePathname();
+
+  async function fetchMyBoards(userId: string) {
+    const { data } = await supabase
+      .from("boards")
+      .select("*")
+      .eq("owner_id", userId)
+      .order("created_at", { ascending: false });
+    setBoards(data || []);
+  }
 
   useEffect(() => {
+    let cancelled = false;
     async function init() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.push("/auth");
         return;
       }
+      if (cancelled) return;
       setUser(user);
-
-      const { data } = await supabase
-        .from("boards")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      setBoards(data || []);
+      await fetchMyBoards(user.id);
+      if (cancelled) return;
       setLoading(false);
     }
     init();
+    return () => { cancelled = true; };
   }, [router]);
+
+  // Refetch when user returns to dashboard (e.g. after renaming a board on the board page)
+  useEffect(() => {
+    if (pathname === "/dashboard" && user?.id) fetchMyBoards(user.id);
+  }, [pathname, user?.id]);
+
+  // Also refetch when user returns to this browser tab
+  useEffect(() => {
+    const userId = user?.id;
+    if (!userId) return;
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible" && userId) fetchMyBoards(userId);
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [user?.id]);
 
   async function createBoard() {
     if (!user) return;
@@ -125,7 +149,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">My Boards</h2>
-            <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">{boards.length} board{boards.length !== 1 ? "s" : ""}</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">Your boards · {boards.length} board{boards.length !== 1 ? "s" : ""}</p>
           </div>
           <button
             onClick={createBoard}

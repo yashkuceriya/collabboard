@@ -3,6 +3,7 @@
 import { useRef, useEffect, useCallback, useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { ColorPicker } from "@/components/color-picker";
+import { FormatPanel } from "@/components/format-panel";
 import type { BoardElement } from "@/lib/types/database";
 import type { Peer } from "@/hooks/use-presence";
 
@@ -18,6 +19,9 @@ interface CanvasProps {
   onCreateConnector?: (fromId: string, toId: string) => void | Promise<void | string | null>;
   onUpdate: (id: string, updates: Partial<BoardElement>) => void;
   onDelete: (id: string) => void;
+  onDuplicate?: (id: string) => void | Promise<string | null>;
+  onBringToFront?: (id: string) => void;
+  onSendToBack?: (id: string) => void;
   onCursorMove: (x: number, y: number) => void;
   peers: Peer[];
   onLocalUpdate?: (id: string, updates: Partial<BoardElement>) => void;
@@ -162,11 +166,12 @@ function getElementTextColor(el: BoardElement, isDark: boolean): string {
   return isDark ? "#f3f4f6" : "#1a1a1a";
 }
 
-type FontSizeKey = "small" | "medium" | "large";
+type FontSizeKey = "small" | "medium" | "large" | "xl";
 const FONT_SIZE_MAP: Record<FontSizeKey, { canvas: number; lineHeight: number }> = {
   small: { canvas: 12, lineHeight: 16 },
   medium: { canvas: 14, lineHeight: 20 },
   large: { canvas: 18, lineHeight: 24 },
+  xl: { canvas: 22, lineHeight: 28 },
 };
 
 function getElementFontSize(el: BoardElement): { canvas: number; lineHeight: number } {
@@ -189,6 +194,36 @@ function getElementFontFamily(el: BoardElement): { canvas: string; css: string }
   return FONT_FAMILY_MAP[key] || FONT_FAMILY_MAP.sans;
 }
 
+type FontWeightKey = "normal" | "bold";
+function getElementFontWeight(el: BoardElement): FontWeightKey {
+  const props = el.properties as Record<string, string> | undefined;
+  const v = props?.fontWeight as string | undefined;
+  return v === "bold" ? "bold" : "normal";
+}
+
+type FontStyleKey = "normal" | "italic";
+function getElementFontStyle(el: BoardElement): FontStyleKey {
+  const props = el.properties as Record<string, string> | undefined;
+  const v = props?.fontStyle as string | undefined;
+  return v === "italic" ? "italic" : "normal";
+}
+
+type TextAlignKey = "left" | "center" | "right";
+function getElementTextAlign(el: BoardElement): TextAlignKey {
+  const props = el.properties as Record<string, string> | undefined;
+  const v = props?.textAlign as string | undefined;
+  if (v === "center" || v === "right") return v;
+  return "left";
+}
+
+function buildCanvasFont(el: BoardElement): string {
+  const size = getElementFontSize(el);
+  const family = getElementFontFamily(el);
+  const weight = getElementFontWeight(el);
+  const style = getElementFontStyle(el);
+  return `${style} ${weight} ${size.canvas}px ${family.canvas}`;
+}
+
 export function Canvas({
   elements,
   viewport,
@@ -199,6 +234,9 @@ export function Canvas({
   onCreateConnector,
   onUpdate,
   onDelete,
+  onDuplicate,
+  onBringToFront,
+  onSendToBack,
   onCursorMove,
   peers,
   onLocalUpdate,
@@ -236,6 +274,7 @@ export function Canvas({
   const [drawDraft, setDrawDraft] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
   const [connectorFromId, setConnectorFromId] = useState<string | null>(null);
   const [connectorPreview, setConnectorPreview] = useState<{ x: number; y: number } | null>(null);
+  const [formatPanelOpen, setFormatPanelOpen] = useState(false);
 
   // When board asks to open editor for a newly created text element, do it once it appears
   useEffect(() => {
@@ -363,12 +402,16 @@ export function Canvas({
         ctx.stroke();
 
         const stickyFont = getElementFontSize(el);
-        const stickyFF = getElementFontFamily(el);
         ctx.fillStyle = getElementTextColor(el, isDark);
-        ctx.font = `${stickyFont.canvas}px ${stickyFF.canvas}`;
+        ctx.font = buildCanvasFont(el);
         const lines = wrapText(ctx, el.text, width - 20);
+        const stickyAlign = getElementTextAlign(el);
+        const pad = 10;
         lines.forEach((line, i) => {
-          ctx.fillText(line, x + 10, y + 10 + stickyFont.canvas + i * stickyFont.lineHeight);
+          const lineY = y + pad + stickyFont.canvas + i * stickyFont.lineHeight;
+          const tw = ctx.measureText(line).width;
+          const lineX = stickyAlign === "center" ? x + width / 2 - tw / 2 : stickyAlign === "right" ? x + width - pad - tw : x + pad;
+          ctx.fillText(line, lineX, lineY);
         });
       } else if (el.type === "rectangle") {
         ctx.fillStyle = el.color + "22";
@@ -380,12 +423,16 @@ export function Canvas({
         ctx.stroke();
         if (el.text) {
           const rectFont = getElementFontSize(el);
-          const rectFF = getElementFontFamily(el);
           ctx.fillStyle = getElementTextColor(el, isDark);
-          ctx.font = `${rectFont.canvas}px ${rectFF.canvas}`;
+          ctx.font = buildCanvasFont(el);
           const lines = wrapText(ctx, el.text, width - 14);
+          const rectAlign = getElementTextAlign(el);
+          const rPad = 7;
           lines.forEach((line, i) => {
-            ctx.fillText(line, x + 7, y + 8 + rectFont.canvas + i * rectFont.lineHeight);
+            const lineY = y + 8 + rectFont.canvas + i * rectFont.lineHeight;
+            const tw = ctx.measureText(line).width;
+            const lineX = rectAlign === "center" ? x + width / 2 - tw / 2 : rectAlign === "right" ? x + width - rPad - tw : x + rPad;
+            ctx.fillText(line, lineX, lineY);
           });
         }
       } else if (el.type === "circle") {
@@ -402,9 +449,8 @@ export function Canvas({
         ctx.stroke();
         if (el.text) {
           const circFont = getElementFontSize(el);
-          const circFF = getElementFontFamily(el);
           ctx.fillStyle = getElementTextColor(el, isDark);
-          ctx.font = `${circFont.canvas}px ${circFF.canvas}`;
+          ctx.font = buildCanvasFont(el);
           const lines = wrapText(ctx, el.text, width - 12);
           const startY = cy - (lines.length * circFont.lineHeight) / 2 + circFont.lineHeight / 2;
           lines.forEach((line, i) => {
@@ -422,12 +468,16 @@ export function Canvas({
         ctx.fill();
         ctx.stroke();
         const textFont = getElementFontSize(el);
-        const textFF = getElementFontFamily(el);
         ctx.fillStyle = getElementTextColor(el, isDark);
-        ctx.font = `${textFont.canvas}px ${textFF.canvas}`;
+        ctx.font = buildCanvasFont(el);
         const lines = wrapText(ctx, el.text || "Type here…", width - 12);
+        const textAlign = getElementTextAlign(el);
+        const tPad = 6;
         lines.forEach((line, i) => {
-          ctx.fillText(line, x + 6, y + 8 + textFont.canvas + i * textFont.lineHeight);
+          const lineY = y + 8 + textFont.canvas + i * textFont.lineHeight;
+          const tw = ctx.measureText(line).width;
+          const lineX = textAlign === "center" ? x + width / 2 - tw / 2 : textAlign === "right" ? x + width - tPad - tw : x + tPad;
+          ctx.fillText(line, lineX, lineY);
         });
       }
 
@@ -864,6 +914,9 @@ export function Canvas({
   }
 
   const selectedElement = selectedId ? elements.find((e) => e.id === selectedId) : null;
+  useEffect(() => {
+    if (!selectedId) setFormatPanelOpen(false);
+  }, [selectedId]);
   const canDeleteSelected =
     selectedId &&
     !editingId &&
@@ -883,6 +936,12 @@ export function Canvas({
     if (e.key === "Escape") {
       setSelectedId(null);
       setEditingId(null);
+      setFormatPanelOpen(false);
+    }
+    if (e.key === "d" && (e.metaKey || e.ctrlKey) && selectedId && onDuplicate && selectedElement?.type !== "connector") {
+      e.preventDefault();
+      void onDuplicate(selectedId);
+      return;
     }
     const key = e.key.toLowerCase();
     if (!e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -999,30 +1058,70 @@ export function Canvas({
         </div>
       )}
 
-      {/* Delete button — tethered to selected element (only for elements you created) */}
-      {canDeleteSelected && selectedElement && (() => {
+      {/* Duplicate + Delete + Layer buttons — tethered to selected element */}
+      {selectedId && !editingId && selectedElement && selectedElement.type !== "connector" && (() => {
         const el = selectedElement;
         const anchor = worldToScreen(el.x + el.width + 8, el.y - 4);
         return (
           <div
-            className="absolute z-20 flex items-center gap-2"
+            className="absolute z-20 flex items-center gap-2 flex-wrap"
             style={{ left: anchor.x, top: anchor.y, transform: "translate(0, -50%)" }}
           >
-            <button
-              type="button"
-              onClick={() => {
-                onDelete(selectedId!);
-                setSelectedId(null);
-              }}
-              className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 hover:bg-red-200 dark:text-red-200 dark:bg-red-900/40 dark:hover:bg-red-900/60 rounded-lg shadow-md border border-red-200 dark:border-red-800 whitespace-nowrap"
-            >
-              Delete
-            </button>
-            <span className="text-xs text-gray-500 dark:text-gray-400 hidden sm:inline">or Delete key</span>
+            {onDuplicate && (
+              <button
+                type="button"
+                onClick={() => {
+                  void onDuplicate(selectedId);
+                }}
+                className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 rounded-lg shadow border border-gray-200 dark:border-gray-700 whitespace-nowrap"
+                title="Duplicate (Ctrl+D)"
+              >
+                Duplicate
+              </button>
+            )}
+            {(onBringToFront || onSendToBack) && (
+              <>
+                {onBringToFront && (
+                  <button
+                    type="button"
+                    onClick={() => onBringToFront(selectedId)}
+                    className="px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-700"
+                    title="Bring to front"
+                  >
+                    Front
+                  </button>
+                )}
+                {onSendToBack && (
+                  <button
+                    type="button"
+                    onClick={() => onSendToBack(selectedId)}
+                    className="px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-700"
+                    title="Send to back"
+                  >
+                    Back
+                  </button>
+                )}
+              </>
+            )}
+            {canDeleteSelected && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDelete(selectedId!);
+                    setSelectedId(null);
+                  }}
+                  className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 hover:bg-red-200 dark:text-red-200 dark:bg-red-900/40 dark:hover:bg-red-900/60 rounded-lg shadow-md border border-red-200 dark:border-red-800 whitespace-nowrap"
+                >
+                  Delete
+                </button>
+                <span className="text-xs text-gray-500 dark:text-gray-400 hidden sm:inline">or Del</span>
+              </>
+            )}
           </div>
         );
       })()}
-      {selectedId && !editingId && !canDeleteSelected && selectedElement && (() => {
+      {selectedId && !editingId && !canDeleteSelected && selectedElement && selectedElement.type !== "connector" && (() => {
         const el = selectedElement;
         const anchor = worldToScreen(el.x + el.width + 8, el.y - 4);
         return (
@@ -1041,8 +1140,15 @@ export function Canvas({
         const anchor = worldToScreen(el.x + el.width + 16, el.y + el.height / 2);
         const props = el.properties as Record<string, string> | undefined;
         const currentTextColor = props?.textColor || "";
-        const currentFontSize = (props?.fontSize || "medium") as "small" | "medium" | "large";
+        const currentFontSize = (props?.fontSize || "medium") as "small" | "medium" | "large" | "xl";
         const currentFontFamily = (props?.fontFamily || "sans") as "sans" | "serif" | "mono" | "hand";
+        const currentFontWeight = (props?.fontWeight === "bold" ? "bold" : "normal") as "normal" | "bold";
+        const currentFontStyle = (props?.fontStyle === "italic" ? "italic" : "normal") as "normal" | "italic";
+        const currentTextAlign = (props?.textAlign === "center" || props?.textAlign === "right" ? props.textAlign : "left") as "left" | "center" | "right";
+        const mergeProps = (patch: Record<string, unknown>) => {
+          const existingProps = (el.properties as Record<string, unknown>) || {};
+          onUpdate(el.id, { properties: { ...existingProps, ...patch } as BoardElement["properties"] });
+        };
         return (
           <div
             className="absolute z-30"
@@ -1052,25 +1158,82 @@ export function Canvas({
               transform: "translate(0, -50%)",
             }}
           >
-            <ColorPicker
+            <div className="flex items-center gap-2">
+              <ColorPicker
+                currentColor={el.color}
+                elementType={el.type as "sticky_note" | "rectangle" | "circle" | "text"}
+                onColorChange={(color) => onUpdate(el.id, { color })}
+                textColor={currentTextColor}
+                onTextColorChange={(textColor) => mergeProps({ textColor })}
+                fontSize={currentFontSize}
+                onFontSizeChange={(fontSize) => mergeProps({ fontSize })}
+                fontFamily={currentFontFamily}
+                onFontFamilyChange={(fontFamily) => mergeProps({ fontFamily })}
+                fontWeight={currentFontWeight}
+                onFontWeightChange={(fontWeight) => mergeProps({ fontWeight })}
+                fontStyle={currentFontStyle}
+                onFontStyleChange={(fontStyle) => mergeProps({ fontStyle })}
+                {...(el.type !== "circle" && {
+                  textAlign: currentTextAlign,
+                  onTextAlignChange: (textAlign: "left" | "center" | "right") => mergeProps({ textAlign }),
+                })}
+              />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFormatPanelOpen(true);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600 flex items-center gap-1.5"
+                title="Open format panel"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 3v18M3 12h18" />
+                  <path d="M7 7h.01M7 17h.01M17 7h.01M17 17h.01" />
+                </svg>
+                Panel
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Slide-out Format panel — full controls when an element is selected */}
+      {formatPanelOpen && selectedId && !editingId && showColorPicker && selectedElement && (() => {
+        const el = selectedElement;
+        const props = el.properties as Record<string, string> | undefined;
+        const currentTextColor = props?.textColor || "";
+        const currentFontSize = (props?.fontSize || "medium") as "small" | "medium" | "large" | "xl";
+        const currentFontFamily = (props?.fontFamily || "sans") as "sans" | "serif" | "mono" | "hand";
+        const currentFontWeight = (props?.fontWeight === "bold" ? "bold" : "normal") as "normal" | "bold";
+        const currentFontStyle = (props?.fontStyle === "italic" ? "italic" : "normal") as "normal" | "italic";
+        const currentTextAlign = (props?.textAlign === "center" || props?.textAlign === "right" ? props.textAlign : "left") as "left" | "center" | "right";
+        const mergeProps = (patch: Record<string, unknown>) => {
+          const existingProps = (el.properties as Record<string, unknown>) || {};
+          onUpdate(el.id, { properties: { ...existingProps, ...patch } as BoardElement["properties"] });
+        };
+        return (
+          <div className="absolute inset-y-0 right-0 w-[280px] z-40 flex flex-col bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 shadow-xl transition-transform duration-200 ease-out">
+            <FormatPanel
               currentColor={el.color}
               elementType={el.type as "sticky_note" | "rectangle" | "circle" | "text"}
               onColorChange={(color) => onUpdate(el.id, { color })}
               textColor={currentTextColor}
-              onTextColorChange={(textColor) => {
-                const existingProps = (el.properties as Record<string, unknown>) || {};
-                onUpdate(el.id, { properties: { ...existingProps, textColor } as BoardElement["properties"] });
-              }}
+              onTextColorChange={(textColor) => mergeProps({ textColor })}
               fontSize={currentFontSize}
-              onFontSizeChange={(fontSize) => {
-                const existingProps = (el.properties as Record<string, unknown>) || {};
-                onUpdate(el.id, { properties: { ...existingProps, fontSize } as BoardElement["properties"] });
-              }}
+              onFontSizeChange={(fontSize) => mergeProps({ fontSize })}
               fontFamily={currentFontFamily}
-              onFontFamilyChange={(fontFamily) => {
-                const existingProps = (el.properties as Record<string, unknown>) || {};
-                onUpdate(el.id, { properties: { ...existingProps, fontFamily } as BoardElement["properties"] });
-              }}
+              onFontFamilyChange={(fontFamily) => mergeProps({ fontFamily })}
+              fontWeight={currentFontWeight}
+              onFontWeightChange={(fontWeight) => mergeProps({ fontWeight })}
+              fontStyle={currentFontStyle}
+              onFontStyleChange={(fontStyle) => mergeProps({ fontStyle })}
+              {...(el.type !== "circle" && {
+                textAlign: currentTextAlign,
+                onTextAlignChange: (textAlign: "left" | "center" | "right") => mergeProps({ textAlign }),
+              })}
+              onClose={() => setFormatPanelOpen(false)}
             />
           </div>
         );
@@ -1092,6 +1255,9 @@ export function Canvas({
         const paddingPx = padding * zoom;
         const elFont = getElementFontSize(el);
         const elFF = getElementFontFamily(el);
+        const fontWeight = getElementFontWeight(el);
+        const fontStyle = getElementFontStyle(el);
+        const textAlign = isCircle ? "center" : getElementTextAlign(el);
         const fontSize = elFont.canvas * zoom;
         const lineHeightPx = elFont.lineHeight * zoom;
         const w = Math.max(60, el.width * zoom);
@@ -1111,7 +1277,9 @@ export function Canvas({
               fontSize,
               lineHeight: lineHeightPx,
               fontFamily: elFF.css,
-              textAlign: isCircle ? "center" : "left",
+              fontWeight,
+              fontStyle,
+              textAlign,
               borderRadius: 4,
               backgroundColor: isSticky ? el.color : `${el.color}22`,
               color: getElementTextColor(el, isDark),

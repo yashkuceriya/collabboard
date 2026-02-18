@@ -12,6 +12,7 @@ import { ChatPanel } from "@/components/chat-panel";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { useRealtimeElements } from "@/hooks/use-realtime-elements";
 import { usePresence } from "@/hooks/use-presence";
+import { sortElementsByOrder } from "@/lib/sort-elements";
 
 export default function BoardPage() {
   const params = useParams();
@@ -60,11 +61,7 @@ export default function BoardPage() {
       setElements((prev) => {
         const idsFromDb = new Set(fromDb.map((e) => e.id));
         const fromRealtime = prev.filter((e) => !idsFromDb.has(e.id));
-        const merged = [...fromDb, ...fromRealtime];
-        merged.sort(
-          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        );
-        return merged;
+        return sortElementsByOrder([...fromDb, ...fromRealtime]);
       });
       setLoading(false);
     }
@@ -129,11 +126,7 @@ export default function BoardPage() {
         created_at: now,
       };
 
-      setElements((prev) =>
-        [...prev, tempEl].sort(
-          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        )
-      );
+      setElements((prev) => sortElementsByOrder([...prev, tempEl]));
 
       const { data, error } = await supabase
         .from("board_elements")
@@ -158,13 +151,7 @@ export default function BoardPage() {
 
       const row = data as BoardElement | null;
       if (row) {
-        setElements((prev) =>
-          prev
-            .map((e) => (e.id === tempId ? row : e))
-            .sort(
-              (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-            )
-        );
+        setElements((prev) => sortElementsByOrder(prev.map((e) => (e.id === tempId ? row : e))));
         broadcastElement(row);
         return row.id;
       }
@@ -195,11 +182,7 @@ export default function BoardPage() {
         updated_at: new Date().toISOString(),
         created_at: new Date().toISOString(),
       };
-      setElements((prev) =>
-        [...prev, tempEl].sort(
-          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        )
-      );
+      setElements((prev) => sortElementsByOrder([...prev, tempEl]));
       const { data, error } = await supabase
         .from("board_elements")
         .insert({
@@ -222,13 +205,7 @@ export default function BoardPage() {
       }
       const row = data as BoardElement | null;
       if (row) {
-        setElements((prev) =>
-          prev
-            .map((e) => (e.id === tempId ? row : e))
-            .sort(
-              (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-            )
-        );
+        setElements((prev) => sortElementsByOrder(prev.map((e) => (e.id === tempId ? row : e))));
         broadcastElement(row);
         return row.id;
       }
@@ -241,9 +218,9 @@ export default function BoardPage() {
   // Update element (persists to Supabase + broadcasts to peers)
   const updateElement = useCallback(
     async (id: string, updates: Partial<BoardElement>) => {
-      // Also update local state immediately for responsiveness
+      // Also update local state immediately for responsiveness (re-sort for z_index changes)
       setElements((prev) =>
-        prev.map((e) => (e.id === id ? { ...e, ...updates } : e))
+        sortElementsByOrder(prev.map((e) => (e.id === id ? { ...e, ...updates } : e)))
       );
       // Broadcast so other clients see the update immediately
       broadcastElementUpdated(id, updates);
@@ -253,6 +230,67 @@ export default function BoardPage() {
         .eq("id", id);
     },
     [broadcastElementUpdated]
+  );
+
+  // Duplicate selected element (offset by 20,20). Non-connector only.
+  const duplicateElement = useCallback(
+    async (id: string): Promise<string | null> => {
+      const el = elements.find((e) => e.id === id);
+      if (!el || !user || el.type === "connector") return null;
+      const offset = 20;
+      const { data, error } = await supabase
+        .from("board_elements")
+        .insert({
+          board_id: boardId,
+          type: el.type,
+          x: el.x + offset,
+          y: el.y + offset,
+          width: el.width,
+          height: el.height,
+          color: el.color,
+          text: el.text,
+          properties: el.properties ?? {},
+          created_by: user.id,
+        } as never)
+        .select("*")
+        .single();
+      if (error) return null;
+      const row = data as BoardElement;
+      setElements((prev) => sortElementsByOrder([...prev, row]));
+      broadcastElement(row);
+      return row.id;
+    },
+    [boardId, user, elements, broadcastElement]
+  );
+
+  // Bring element to front (increase z_index in properties)
+  const bringToFront = useCallback(
+    (id: string) => {
+      const el = elements.find((e) => e.id === id);
+      if (!el) return;
+      const maxZ = Math.max(
+        ...elements.map((e) => (e.properties as Record<string, number>)?.z_index ?? 0),
+        0
+      );
+      const props = (el.properties as Record<string, unknown>) ?? {};
+      updateElement(id, { properties: { ...props, z_index: maxZ + 1 } as BoardElement["properties"] });
+    },
+    [elements, updateElement]
+  );
+
+  // Send element to back (decrease z_index in properties)
+  const sendToBack = useCallback(
+    (id: string) => {
+      const el = elements.find((e) => e.id === id);
+      if (!el) return;
+      const minZ = Math.min(
+        ...elements.map((e) => (e.properties as Record<string, number>)?.z_index ?? 0),
+        0
+      );
+      const props = (el.properties as Record<string, unknown>) ?? {};
+      updateElement(id, { properties: { ...props, z_index: minZ - 1 } as BoardElement["properties"] });
+    },
+    [elements, updateElement]
   );
 
   // Optimistic local-only update (no DB round-trip) — used during drag
@@ -389,6 +427,9 @@ export default function BoardPage() {
         onCreateConnector={createConnector}
         onUpdate={updateElement}
         onDelete={deleteElement}
+        onDuplicate={duplicateElement}
+        onBringToFront={bringToFront}
+        onSendToBack={sendToBack}
         onCursorMove={broadcastCursor}
         peers={peers}
         onLocalUpdate={localUpdateElement}

@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase/client";
 import type { BoardElement } from "@/lib/types/database";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { sortElementsByOrder } from "@/lib/sort-elements";
 
 type SetElements = React.Dispatch<React.SetStateAction<BoardElement[]>>;
 
@@ -33,9 +34,7 @@ export function useRealtimeElements(boardId: string, setElements: SetElements) {
   const addToState = useCallback((newEl: BoardElement) => {
     setElementsRef.current((prev) => {
       if (prev.some((e) => e.id === newEl.id)) return prev;
-      return [...prev, newEl].sort(
-        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
+      return sortElementsByOrder([...prev, newEl]);
     });
   }, []);
 
@@ -74,7 +73,7 @@ export function useRealtimeElements(boardId: string, setElements: SetElements) {
         (payload) => {
           const updated = normalizeRow((payload.new as Record<string, unknown>) ?? {});
           setElementsRef.current((prev) =>
-            prev.map((e) => (e.id === updated.id ? updated : e))
+            sortElementsByOrder(prev.map((e) => (e.id === updated.id ? updated : e)))
           );
         }
       )
@@ -114,7 +113,7 @@ export function useRealtimeElements(boardId: string, setElements: SetElements) {
           const { _ts: __, ...rest } = raw;
           const updated = normalizeRow(rest);
           setElementsRef.current((prev) =>
-            prev.map((e) => (e.id === updated.id ? { ...e, ...updated } : e))
+            sortElementsByOrder(prev.map((e) => (e.id === updated.id ? { ...e, ...updated } : e)))
           );
         }
       })

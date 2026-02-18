@@ -20,6 +20,18 @@ function getMessageText(m: UIMessage): string {
     .join("");
 }
 
+/** Strip markdown/code so AI replies show as normal plain text (no **, `, code blocks). */
+function plainText(s: string): string {
+  return s
+    .replace(/\*\*\*(.+?)\*\*\*/g, "$1")
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/\*(.+?)\*/g, "$1")
+    .replace(/_(.+?)_/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/```[\s\S]*?```/g, "")
+    .trim();
+}
+
 export function ChatPanel({ boardId, user, accessToken, onClose }: ChatPanelProps) {
   const [input, setInput] = useState("");
 
@@ -108,7 +120,8 @@ export function ChatPanel({ boardId, user, accessToken, onClose }: ChatPanelProp
           </div>
         )}
         {messages.map((m: UIMessage) => {
-          const text = getMessageText(m);
+          let text = getMessageText(m);
+          if (m.role === "assistant") text = plainText(text);
           if (!text) return null;
           return (
             <div
