@@ -57,6 +57,8 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000)
 
+To run with Docker instead (build image and run with your env), see [DOCKER-STRATEGY.md](./DOCKER-STRATEGY.md).
+
 ### 5. Test multiplayer
 
 Open two browser windows (or one normal + one incognito) with **two different accounts** at the **same board URL**. You should see:

@@ -1,0 +1,25 @@
+# Dependencies and build
+node_modules
+.next
+.pnp
+.pnp.js
+
+# Env (mount or pass at run time)
+.env
+.env.*
+!.env.example
+
+# Git and IDE
+.git
+.gitignore
+.cursor
+.vscode
+*.md
+!README.md
+
+# Misc
+.DS_Store
+*.log
+npm-debug.log*
+coverage
+.vercel
