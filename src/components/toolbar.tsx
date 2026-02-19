@@ -1,6 +1,6 @@
 "use client";
 
-export type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "text" | "connector";
+export type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "text" | "connector" | "pen" | "eraser";
 
 interface ToolbarProps {
   tool: ToolId;
