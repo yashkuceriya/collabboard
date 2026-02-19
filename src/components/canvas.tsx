@@ -278,6 +278,7 @@ export function Canvas({
   const [connectorPreview, setConnectorPreview] = useState<{ x: number; y: number } | null>(null);
   const [formatPanelOpen, setFormatPanelOpen] = useState(false);
   const [strokePoints, setStrokePoints] = useState<{ x: number; y: number }[]>([]);
+  const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // When board asks to open editor for a newly created text element, do it once it appears
   useEffect(() => {
@@ -289,6 +290,19 @@ export function Canvas({
       onOpenEditorFulfilled();
     }
   }, [openEditorForId, onOpenEditorFulfilled, elements]);
+
+  // Place cursor at start (top) when opening text editor
+  useEffect(() => {
+    if (!editingId) return;
+    const ta = editTextareaRef.current;
+    if (ta) {
+      const id = requestAnimationFrame(() => {
+        ta.focus();
+        ta.setSelectionRange(0, 0);
+      });
+      return () => cancelAnimationFrame(id);
+    }
+  }, [editingId]);
 
   // Screen coords → world coords
   const screenToWorld = useCallback(
@@ -394,6 +408,15 @@ export function Canvas({
       if (!inView(x, y, width, height)) continue;
 
       ctx.save();
+
+      const rotation = (el.properties as { rotation?: number } | undefined)?.rotation ?? 0;
+      if (rotation && (el.type === "sticky_note" || el.type === "rectangle" || el.type === "circle" || el.type === "text")) {
+        const cx = x + width / 2;
+        const cy = y + height / 2;
+        ctx.translate(cx, cy);
+        ctx.rotate((rotation * Math.PI) / 180);
+        ctx.translate(-cx, -cy);
+      }
 
       if (el.type === "sticky_note") {
         ctx.shadowColor = isDark ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.10)";
@@ -706,7 +729,7 @@ export function Canvas({
     }
     if (tool === "eraser") {
       const hit = hitTest(sx, sy);
-      if (hit?.type === "freehand") onDelete(hit.id);
+      if (hit) onDelete(hit.id);
       return;
     }
 
@@ -1288,6 +1311,8 @@ export function Canvas({
                 textAlign: currentTextAlign,
                 onTextAlignChange: (textAlign: "left" | "center" | "right") => mergeProps({ textAlign }),
               })}
+              rotation={typeof props?.rotation === "number" ? props.rotation : 0}
+              onRotationChange={(r) => mergeProps({ rotation: r })}
               onClose={() => setFormatPanelOpen(false)}
             />
           </div>
@@ -1319,6 +1344,7 @@ export function Canvas({
         const h = Math.max(lineHeightPx + paddingPx * 2, el.height * zoom);
         return (
           <textarea
+            ref={editTextareaRef}
             autoFocus
             tabIndex={0}
             aria-label="Edit text"
@@ -1346,7 +1372,7 @@ export function Canvas({
             onKeyDown={(e) => {
               e.stopPropagation();
               if (e.key === "Escape") saveAndClose();
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 saveAndClose();
               }

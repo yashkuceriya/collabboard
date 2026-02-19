@@ -74,6 +74,8 @@ export function ChatPanel({ boardId, user, accessToken, onClose, interviewMode }
         "Analyze time and space complexity",
         "Suggest edge cases to consider",
         "Add components for a typical web app",
+        "Tell me a fun fact",
+        "Tell me a joke",
       ]
     : [
         "Brainstorm ideas about...",
@@ -84,6 +86,8 @@ export function ChatPanel({ boardId, user, accessToken, onClose, interviewMode }
         "Design a system architecture",
         "Add a pros/cons list",
         "Add a title and subtitle",
+        "Tell me a fun fact",
+        "Tell me a joke",
       ];
 
   return (
