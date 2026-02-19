@@ -7,13 +7,17 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { Database } from "@/lib/types/database";
 
-// Enable LangSmith tracing when API key is set (OpenAI cost/usage in LangSmith dashboard).
-// RunTree defaults to localhost:1984 if LANGCHAIN_ENDPOINT is unset, so set both.
-if (process.env.LANGCHAIN_API_KEY) {
+// LangSmith: support both LANGSMITH_* and LANGCHAIN_* env vars. RunTree uses LANGCHAIN_* only, so mirror LANGSMITH_* into LANGCHAIN_* when set.
+const langsmithKey = process.env.LANGSMITH_API_KEY ?? process.env.LANGCHAIN_API_KEY;
+if (langsmithKey) {
+  if (!process.env.LANGCHAIN_API_KEY) process.env.LANGCHAIN_API_KEY = langsmithKey;
+  const endpoint = "https://api.smith.langchain.com";
   if (process.env.LANGCHAIN_TRACING !== "true") process.env.LANGCHAIN_TRACING = "true";
-  if (!process.env.LANGCHAIN_ENDPOINT) process.env.LANGCHAIN_ENDPOINT = "https://api.smith.langchain.com";
+  if (process.env.LANGSMITH_TRACING !== "true") process.env.LANGSMITH_TRACING = "true";
+  if (!process.env.LANGCHAIN_ENDPOINT) process.env.LANGCHAIN_ENDPOINT = endpoint;
+  if (!process.env.LANGSMITH_ENDPOINT) process.env.LANGSMITH_ENDPOINT = endpoint;
 }
-const traced = process.env.LANGCHAIN_API_KEY ? wrapAISDK(ai) : null;
+const traced = langsmithKey ? wrapAISDK(ai) : null;
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
