@@ -5,6 +5,8 @@ Real-time collaborative whiteboard. Built with Next.js and Supabase.
 
 **MVP scope:** Infinite board (pan/zoom) · Sticky notes (editable text) · Shapes (rectangle, circle) · Create/move/edit objects · **Delete:** select any object then press Delete key or use the Delete button · Real-time sync · Multiplayer cursors with labels · Presence (who’s online) · Auth · Deployed & publicly accessible.
 
+**Beyond MVP:** Interview boards · Board chat · Freehand pen/eraser · Rotation · AI (interview/creative mode, fun facts) · Recent boards (history tab). See [MVP-CHECKLIST.md](./MVP-CHECKLIST.md).
+
 ## Quick Start
 
 ### 1. Clone and install

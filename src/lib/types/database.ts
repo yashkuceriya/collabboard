@@ -9,6 +9,7 @@ export interface Database {
           name: string;
           owner_id: string;
           is_starred: boolean;
+          is_interview: boolean;
           created_at: string;
         };
         Insert: {
@@ -16,6 +17,7 @@ export interface Database {
           name?: string;
           owner_id: string;
           is_starred?: boolean;
+          is_interview?: boolean;
           created_at?: string;
         };
         Update: {
@@ -23,6 +25,7 @@ export interface Database {
           name?: string;
           owner_id?: string;
           is_starred?: boolean;
+          is_interview?: boolean;
           created_at?: string;
         };
       };
@@ -93,6 +96,32 @@ export interface Database {
           created_at?: string;
         };
       };
+      board_chat_messages: {
+        Row: {
+          id: string;
+          board_id: string;
+          user_id: string;
+          user_email: string;
+          body: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          board_id: string;
+          user_id: string;
+          user_email: string;
+          body: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          board_id?: string;
+          user_id?: string;
+          user_email?: string;
+          body?: string;
+          created_at?: string;
+        };
+      };
     };
     Functions: {
       get_user_id_by_email: {
@@ -108,4 +137,5 @@ export type BoardMember = Database["public"]["Tables"]["board_members"]["Row"];
 export type BoardElement = Database["public"]["Tables"]["board_elements"]["Row"];
 export type BoardElementInsert = Database["public"]["Tables"]["board_elements"]["Insert"];
 export type BoardElementUpdate = Database["public"]["Tables"]["board_elements"]["Update"];
+export type BoardChatMessage = Database["public"]["Tables"]["board_chat_messages"]["Row"];
 export type ElementType = BoardElement["type"];

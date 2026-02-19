@@ -9,12 +9,15 @@ import { Canvas } from "@/components/canvas";
 import { Toolbar } from "@/components/toolbar";
 import { PresenceBar } from "@/components/presence-bar";
 import { ChatPanel } from "@/components/chat-panel";
+import { BoardChatPanel } from "@/components/board-chat-panel";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { ShareBoardModal } from "@/components/share-board-modal";
 import { InterviewToolbar } from "@/components/interview-toolbar";
 import { useRealtimeElements } from "@/hooks/use-realtime-elements";
 import { usePresence } from "@/hooks/use-presence";
+import { useBoardChat } from "@/hooks/use-board-chat";
 import { sortElementsByOrder } from "@/lib/sort-elements";
+import { addRecentBoard } from "@/lib/recent-boards";
 
 export default function BoardPage() {
   const params = useParams();
@@ -33,7 +36,8 @@ export default function BoardPage() {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [showShareModal, setShowShareModal] = useState(false);
-  const [interviewMode, setInterviewMode] = useState(false);
+  const [showBoardChatPanel, setShowBoardChatPanel] = useState(false);
+  const [interviewMode, setInterviewMode] = useState(false); // derived from board.is_interview
   const searchParams = useSearchParams();
   const perfMode = searchParams.get("perf") === "1";
 
@@ -51,13 +55,15 @@ export default function BoardPage() {
 
       const { data: boardData } = await supabase
         .from("boards")
-        .select("name, owner_id")
+        .select("name, owner_id, is_interview")
         .eq("id", boardId)
         .single();
       if (boardData) {
-        const b = boardData as { name: string; owner_id: string };
+        const b = boardData as { name: string; owner_id: string; is_interview?: boolean };
         setBoardName(b.name);
         setBoardOwnerId(b.owner_id);
+        setInterviewMode(!!b.is_interview);
+        addRecentBoard(boardId);
       } else {
         router.replace("/dashboard");
         return;
@@ -97,6 +103,9 @@ export default function BoardPage() {
   // Presence (cursors + who's online)
   const { peers, broadcastCursor } = usePresence(boardId, user);
 
+  // Board chat (messages between users on this board)
+  const { messages: chatMessages, loading: chatLoading, sendMessage } = useBoardChat(boardId, user);
+
   // Create element. For rectangle/circle, (x,y,width,height) can be passed (draw-by-drag). Otherwise click creates default size.
   const createElement = useCallback(
     async (
@@ -132,7 +141,7 @@ export default function BoardPage() {
         height: h,
         color,
         text: type === "sticky_note" ? "New note" : "",
-        properties: {},
+        properties: type === "sticky_note" ? { rotation: (Math.random() - 0.5) * 6 } : {},
         created_by: user.id,
         updated_at: now,
         created_at: now,
@@ -151,6 +160,7 @@ export default function BoardPage() {
           height: h,
           color,
           text: tempEl.text,
+          properties: tempEl.properties ?? {},
           created_by: user.id,
         } as never)
         .select("*")
@@ -318,7 +328,7 @@ export default function BoardPage() {
       await updateElement(id, {
         text: "// Your code here\n\nfunction solution() {\n  \n}",
         color: "#1e293b",
-        properties: { fontFamily: "mono", fontSize: "medium" } as BoardElement["properties"],
+        properties: { fontFamily: "mono", fontSize: "large", textColor: "#e2e8f0" } as BoardElement["properties"],
       });
       setOpenEditorForId(id);
     }
@@ -567,17 +577,15 @@ export default function BoardPage() {
               Share
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => setInterviewMode((v) => !v)}
-            className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 ${interviewMode ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm shadow-emerald-500/25" : "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-800/50"}`}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="2" y="3" width="20" height="14" rx="2" />
-              <path d="M8 21h8M12 17v4" />
-            </svg>
-            Interview
-          </button>
+          {interviewMode && (
+            <span className="text-sm px-3 py-1.5 rounded-lg font-medium bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm shadow-emerald-500/25 flex items-center gap-1.5" title="This is an interview board (set when created)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2" />
+                <path d="M8 21h8M12 17v4" />
+              </svg>
+              Interview
+            </span>
+          )}
           <ThemeSwitcher />
           <button
             type="button"
@@ -590,10 +598,36 @@ export default function BoardPage() {
             </svg>
             AI
           </button>
+          <button
+            type="button"
+            onClick={() => setShowBoardChatPanel((v) => !v)}
+            className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 ${showBoardChatPanel ? "bg-gradient-to-r from-sky-500 to-blue-500 text-white shadow-sm shadow-sky-500/25" : "text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-900/20 hover:bg-sky-100 dark:hover:bg-sky-900/40 border border-sky-200 dark:border-sky-800/50"}`}
+            title="Chat with collaborators on this board"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+            </svg>
+            Chat
+          </button>
           <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
           <PresenceBar peers={peers} user={user} />
         </div>
       </div>
+
+      {/* Board chat panel — to the left of AI panel when both open */}
+      {showBoardChatPanel && (
+        <div className="absolute top-0 bottom-0 z-30" style={{ right: showChatPanel ? 340 : 0 }}>
+          <BoardChatPanel
+            boardId={boardId}
+            user={user}
+            messages={chatMessages}
+            loading={chatLoading}
+            onSend={sendMessage}
+            onClose={() => setShowBoardChatPanel(false)}
+            peerCount={peers.length}
+          />
+        </div>
+      )}
 
       {/* Interview toolbar */}
       {interviewMode && (

@@ -11,6 +11,8 @@ import {
 
 interface FormatPanelProps extends ColorPickerProps {
   onClose: () => void;
+  rotation?: number;
+  onRotationChange?: (degrees: number) => void;
 }
 
 export function FormatPanel({
@@ -29,6 +31,8 @@ export function FormatPanel({
   onFontStyleChange,
   textAlign,
   onTextAlignChange,
+  rotation = 0,
+  onRotationChange,
   onClose,
 }: FormatPanelProps) {
   const colors = elementType === "sticky_note" ? STICKY_COLORS : SHAPE_COLORS;
@@ -210,6 +214,27 @@ export function FormatPanel({
                   </button>
                 </>
               )}
+            </div>
+          </section>
+        )}
+
+        {/* Rotation */}
+        {onRotationChange && (
+          <section>
+            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Rotation</label>
+            <div className="flex flex-wrap gap-1.5 items-center">
+              {[-15, -5, 0, 5, 15].map((deg) => (
+                <button
+                  key={deg}
+                  type="button"
+                  onClick={() => onRotationChange(deg)}
+                  className={`px-2.5 py-1.5 text-xs font-medium rounded-lg ${btn} ${
+                    Math.round(rotation) === deg ? btnActive : ""
+                  }`}
+                >
+                  {deg}°
+                </button>
+              ))}
             </div>
           </section>
         )}
