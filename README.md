@@ -47,7 +47,8 @@ Edit `.env.local`:
 - `NEXT_PUBLIC_SITE_URL` — optional; your app URL in production (e.g. `https://your-app.vercel.app`) so sign-up confirmation emails redirect to your deployment. Vercel sets `NEXT_PUBLIC_VERCEL_URL` automatically.
 - `NEXT_PUBLIC_ENABLE_AI=true` — optional; enables AI board agent (full app)
 - `OPENAI_API_KEY` — only if AI is enabled
-- `SUPABASE_SERVICE_ROLE_KEY` — optional; required for **Share → Invite by email** (get from Supabase Settings → API → service_role; never expose in client)
+- `SUPABASE_SERVICE_ROLE_KEY` — optional; required for **Share → Invite by email**
+- `LANGCHAIN_API_KEY` — optional; when set, AI chat is traced in [LangSmith](https://smith.langchain.com) (OpenAI cost/usage). In Vercel also add `LANGCHAIN_TRACING=true` and `LANGCHAIN_PROJECT=collabboard` so traces appear under that project. The app sets the LangSmith API endpoint automatically when the key is present. (get from Supabase Settings → API → service_role; never expose in client)
 
 ### 4. Run locally
 

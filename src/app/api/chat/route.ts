@@ -7,6 +7,12 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { Database } from "@/lib/types/database";
 
+// Enable LangSmith tracing when API key is set (OpenAI cost/usage in LangSmith dashboard).
+// RunTree defaults to localhost:1984 if LANGCHAIN_ENDPOINT is unset, so set both.
+if (process.env.LANGCHAIN_API_KEY) {
+  if (process.env.LANGCHAIN_TRACING !== "true") process.env.LANGCHAIN_TRACING = "true";
+  if (!process.env.LANGCHAIN_ENDPOINT) process.env.LANGCHAIN_ENDPOINT = "https://api.smith.langchain.com";
+}
 const traced = process.env.LANGCHAIN_API_KEY ? wrapAISDK(ai) : null;
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
