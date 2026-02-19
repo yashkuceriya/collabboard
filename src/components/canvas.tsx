@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useCallback, useState } from "react";
+import { useRef, useEffect, useLayoutEffect, useCallback, useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { ColorPicker } from "@/components/color-picker";
 import { FormatPanel } from "@/components/format-panel";
@@ -291,26 +291,26 @@ export function Canvas({
     }
   }, [openEditorForId, onOpenEditorFulfilled, elements]);
 
-  // Place cursor at start (top) when opening text editor
-  useEffect(() => {
+  // Place cursor at start (top) for all editable text: sticky notes, shapes, text/code blocks. Run before paint.
+  useLayoutEffect(() => {
     if (!editingId) return;
+    const run = (el: HTMLTextAreaElement) => {
+      el.focus();
+      el.setSelectionRange(0, 0);
+      el.scrollTop = 0;
+    };
     const ta = editTextareaRef.current;
     if (ta) {
-      let id2: number | undefined;
-      const run = () => {
-        ta.focus();
-        ta.setSelectionRange(0, 0);
-        ta.scrollTop = 0;
-      };
-      const id1 = requestAnimationFrame(() => {
-        run();
-        id2 = requestAnimationFrame(run); // after layout so view stays at top
-      });
-      return () => {
-        cancelAnimationFrame(id1);
-        if (id2 !== undefined) cancelAnimationFrame(id2);
-      };
+      run(ta);
+      const id = requestAnimationFrame(() => run(ta));
+      return () => cancelAnimationFrame(id);
     }
+    // Ref may not be set yet (conditional render); try again next frame
+    const id = requestAnimationFrame(() => {
+      const el = editTextareaRef.current;
+      if (el) run(el);
+    });
+    return () => cancelAnimationFrame(id);
   }, [editingId]);
 
   // Screen coords → world coords
@@ -1356,7 +1356,6 @@ export function Canvas({
         return (
           <textarea
             ref={editTextareaRef}
-            autoFocus
             tabIndex={0}
             aria-label="Edit text"
             className={`absolute border-2 resize-none outline-none z-[100] focus:ring-2 focus:ring-blue-400 box-border ${isCodeBlock ? "border-blue-600 dark:border-blue-400" : "border-blue-500"}`}
