@@ -13,6 +13,7 @@
     "@ai-sdk/react": "^3.0.88",
     "@supabase/supabase-js": "^2.95.3",
     "ai": "^6.0.86",
+    "langsmith": "^0.5.4",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",

@@ -122,27 +122,25 @@ function ToolButton({
 export function InterviewToolbar({ tool, onToolChange, onInsertTemplate, onInsertCodeBlock, onClearBoard }: InterviewToolbarProps) {
   return (
     <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-xl shadow-lg border border-gray-200/50 dark:border-gray-700/50 px-4 py-2.5">
+      {/* Drawing tools — curated for interview: no sticky notes, no pen/eraser */}
       <div className="flex items-center gap-1.5">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mr-0.5">Draw</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mr-0.5">Tools</span>
         {onToolChange && (
           <>
-            <ToolButton active={tool === "select"} onClick={() => onToolChange("select")} label="Select">
+            <ToolButton active={tool === "select"} onClick={() => onToolChange("select")} label="Select (V)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l7.07 16.97 2.51-5.39 5.39-2.51L3 3z" /></svg>
             </ToolButton>
-            <ToolButton active={tool === "pen"} onClick={() => onToolChange("pen")} label="Pen">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 19l7-7 3 3-7 7-3-3z" /><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" /></svg>
-            </ToolButton>
-            <ToolButton active={tool === "eraser"} onClick={() => onToolChange("eraser")} label="Eraser">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 20H7L3 16a2 2 0 010-2.83L16 1a2 2 0 012.83 0l4 4a2 2 0 010 2.83L10 20" /></svg>
-            </ToolButton>
-            <ToolButton active={tool === "text"} onClick={() => onToolChange("text")} label="Type">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 7V4h16v3M9 20h6M12 4v16" /></svg>
-            </ToolButton>
-            <ToolButton active={tool === "rectangle"} onClick={() => onToolChange("rectangle")} label="Rectangle">
+            <ToolButton active={tool === "rectangle"} onClick={() => onToolChange("rectangle")} label="Rectangle (R)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="1" /></svg>
             </ToolButton>
-            <ToolButton active={tool === "circle"} onClick={() => onToolChange("circle")} label="Circle">
+            <ToolButton active={tool === "circle"} onClick={() => onToolChange("circle")} label="Circle (O)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /></svg>
+            </ToolButton>
+            <ToolButton active={tool === "text"} onClick={() => onToolChange("text")} label="Text (T)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 7V4h16v3M9 20h6M12 4v16" /></svg>
+            </ToolButton>
+            <ToolButton active={tool === "connector"} onClick={() => onToolChange("connector")} label="Connect (A)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h10" /><path d="M12 5l5 7-5 7" /></svg>
             </ToolButton>
             {onInsertCodeBlock && (
               <button
@@ -151,7 +149,7 @@ export function InterviewToolbar({ tool, onToolChange, onInsertTemplate, onInser
                 className="px-2 py-1.5 text-xs font-medium rounded-lg bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/50 border border-violet-200 dark:border-violet-800/50 flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-gray-900"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg>
-                Code block
+                Code
               </button>
             )}
           </>
