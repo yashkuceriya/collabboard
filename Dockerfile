@@ -1,6 +1,6 @@
 # CollabBoard — Dockerized Next.js app (see DOCKER-STRATEGY.md)
 
-# Stage 1: deps (pnpm 9+ for lockfile v6)
+# Stage 1: deps (pnpm 8+ for lockfile v6)
 FROM node:20-alpine AS deps
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@8.15.0 --activate

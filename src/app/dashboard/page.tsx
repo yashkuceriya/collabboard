@@ -220,20 +220,20 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">Boards</h2>
-            <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">
+            <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
               {ownedCount} owned · {sharedCount} shared with you
             </p>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => createBoard(false)}
-              className="px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-lg text-sm font-medium transition-all shadow-sm shadow-blue-500/25"
+              className="px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-lg text-sm font-medium transition-all shadow-sm shadow-blue-500/25 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
             >
               + New Board
             </button>
             <button
               onClick={() => createBoard(true)}
-              className="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-lg text-sm font-medium transition-all shadow-sm shadow-emerald-500/25"
+              className="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-lg text-sm font-medium transition-all shadow-sm shadow-emerald-500/25 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2"
             >
               + Interview Board
             </button>
@@ -299,7 +299,7 @@ export default function DashboardPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search boards..."
-              className="pl-9 pr-3 py-2 w-56 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+              className="pl-9 pr-3 py-2 w-56 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
             />
             </div>
           </div>
@@ -367,7 +367,7 @@ export default function DashboardPage() {
               return (
                 <div
                   key={board.id}
-                  className="group bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-800/60 rounded-xl overflow-hidden text-left hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
+                  className="group bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-800/60 rounded-xl overflow-hidden text-left shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
                   onClick={() => {
                     if (editingBoardId !== board.id) router.push(`/board/${board.id}`);
                   }}
@@ -389,7 +389,7 @@ export default function DashboardPage() {
                             e.stopPropagation();
                             toggleStar(board.id);
                           }}
-                          className={`p-1.5 rounded-lg transition-all ${board.is_starred ? "text-amber-400 hover:text-amber-500" : "text-gray-300 dark:text-gray-600 opacity-0 group-hover:opacity-100 hover:text-amber-400"}`}
+                          className={`p-1.5 rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-1 ${board.is_starred ? "text-amber-400 hover:text-amber-500" : "text-gray-300 dark:text-gray-600 opacity-0 group-hover:opacity-100 hover:text-amber-400"}`}
                           title={board.is_starred ? "Unstar" : "Star"}
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill={board.is_starred ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -405,7 +405,7 @@ export default function DashboardPage() {
                                 setEditingBoardId(board.id);
                                 setEditName(board.name);
                               }}
-                              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+                              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"
                               title="Rename board"
                             >
                               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
@@ -420,7 +420,7 @@ export default function DashboardPage() {
                                 e.stopPropagation();
                                 setDeletingBoardId(board.id);
                               }}
-                              className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 transition-all"
+                              className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 transition-all focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1"
                               title="Delete board"
                             >
                               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400 hover:text-red-500">
@@ -432,7 +432,7 @@ export default function DashboardPage() {
                             <button
                               type="button"
                               onClick={(e) => handleRemoveFromRecent(board.id, e)}
-                              className="p-1.5 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-all"
+                              className="p-1.5 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-all focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-1"
                               title="Remove from recent"
                             >
                               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400 hover:text-amber-500">

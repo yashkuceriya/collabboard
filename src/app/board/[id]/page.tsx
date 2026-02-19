@@ -522,12 +522,12 @@ export default function BoardPage() {
         />
       )}
 
-      {/* Top bar */}
-      <div className="h-12 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 flex items-center justify-between px-4 shrink-0 z-10">
+      {/* Top bar: single row — board name, Share, Chat, Theme */}
+      <div className="min-h-12 py-3 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 flex items-center justify-between px-4 shrink-0 z-10">
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.push("/dashboard")}
-            className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-100 transition-colors rounded-lg px-2 py-1 -ml-1 hover:bg-gray-100 dark:hover:bg-gray-800"
+            className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-100 transition-colors rounded-lg px-2 py-1 -ml-1 hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10 12L6 8l4-4" />
@@ -567,7 +567,8 @@ export default function BoardPage() {
             <button
               type="button"
               onClick={() => setShowShareModal(true)}
-              className="text-sm px-3 py-1.5 rounded-lg font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 flex items-center gap-1.5"
+              title="Share this board"
+              className="text-sm px-3 py-1.5 rounded-lg font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" />
@@ -590,7 +591,8 @@ export default function BoardPage() {
           <button
             type="button"
             onClick={() => setShowChatPanel((v) => !v)}
-            className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 ${showChatPanel ? "bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-sm shadow-violet-500/25" : "text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 border border-violet-200 dark:border-violet-800/50"}`}
+            title="AI assistant"
+            className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-1 ${showChatPanel ? "bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-sm shadow-violet-500/25" : "text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 border border-violet-200 dark:border-violet-800/50"}`}
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M8 1l1.5 3.5L13 6l-3.5 1.5L8 11l-1.5-3.5L3 6l3.5-1.5L8 1z" />
@@ -601,8 +603,8 @@ export default function BoardPage() {
           <button
             type="button"
             onClick={() => setShowBoardChatPanel((v) => !v)}
-            className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 ${showBoardChatPanel ? "bg-gradient-to-r from-sky-500 to-blue-500 text-white shadow-sm shadow-sky-500/25" : "text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-900/20 hover:bg-sky-100 dark:hover:bg-sky-900/40 border border-sky-200 dark:border-sky-800/50"}`}
             title="Chat with collaborators on this board"
+            className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-1 ${showBoardChatPanel ? "bg-gradient-to-r from-sky-500 to-blue-500 text-white shadow-sm shadow-sky-500/25" : "text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-900/20 hover:bg-sky-100 dark:hover:bg-sky-900/40 border border-sky-200 dark:border-sky-800/50"}`}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />

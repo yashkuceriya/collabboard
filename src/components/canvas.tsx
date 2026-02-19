@@ -296,11 +296,20 @@ export function Canvas({
     if (!editingId) return;
     const ta = editTextareaRef.current;
     if (ta) {
-      const id = requestAnimationFrame(() => {
+      let id2: number | undefined;
+      const run = () => {
         ta.focus();
         ta.setSelectionRange(0, 0);
+        ta.scrollTop = 0;
+      };
+      const id1 = requestAnimationFrame(() => {
+        run();
+        id2 = requestAnimationFrame(run); // after layout so view stays at top
       });
-      return () => cancelAnimationFrame(id);
+      return () => {
+        cancelAnimationFrame(id1);
+        if (id2 !== undefined) cancelAnimationFrame(id2);
+      };
     }
   }, [editingId]);
 
@@ -1342,18 +1351,21 @@ export function Canvas({
         const lineHeightPx = elFont.lineHeight * zoom;
         const w = Math.max(60, el.width * zoom);
         const h = Math.max(lineHeightPx + paddingPx * 2, el.height * zoom);
+        const isCodeBlock = el.type === "text" && ((el.properties as Record<string, string>)?.fontFamily === "mono");
+        const minH = el.type === "text" ? Math.max(h, 120) : h;
         return (
           <textarea
             ref={editTextareaRef}
             autoFocus
             tabIndex={0}
             aria-label="Edit text"
-            className="absolute border-2 border-blue-500 resize-none outline-none z-[100] focus:ring-2 focus:ring-blue-400 box-border"
+            className={`absolute border-2 resize-none outline-none z-[100] focus:ring-2 focus:ring-blue-400 box-border ${isCodeBlock ? "border-blue-600 dark:border-blue-400" : "border-blue-500"}`}
             style={{
               left: screen.x,
               top: screen.y,
               width: w,
-              height: h,
+              height: minH,
+              minHeight: el.type === "text" ? 120 : undefined,
               padding: paddingPx,
               fontSize,
               lineHeight: lineHeightPx,
@@ -1362,9 +1374,11 @@ export function Canvas({
               fontStyle,
               textAlign,
               borderRadius: 4,
+              ...(isCodeBlock && { borderLeft: `3px solid ${isDark ? "rgb(96 165 250)" : "rgb(37 99 235)"}` }),
               backgroundColor: isSticky ? el.color : `${el.color}22`,
               color: getElementTextColor(el, isDark),
               pointerEvents: "auto",
+              overflow: "auto",
             }}
             value={editText}
             onChange={(e) => setEditText(e.target.value)}
