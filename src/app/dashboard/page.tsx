@@ -9,6 +9,8 @@ import { ThemeSwitcher } from "@/components/theme-switcher";
 
 export type BoardWithAccess = Board & { access: "owner" | "shared" };
 
+type TabId = "all" | "starred";
+
 export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null);
   const [boards, setBoards] = useState<BoardWithAccess[]>([]);
@@ -17,6 +19,8 @@ export default function DashboardPage() {
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabId>("all");
+  const [search, setSearch] = useState("");
   const router = useRouter();
   const pathname = usePathname();
 
@@ -36,7 +40,10 @@ export default function DashboardPage() {
     const withAccess: BoardWithAccess[] = [
       ...owned.map((b) => ({ ...b, access: "owner" as const })),
       ...shared.map((b) => ({ ...b, access: "shared" as const })),
-    ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    ].sort((a, b) => {
+      if (a.is_starred !== b.is_starred) return a.is_starred ? -1 : 1;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
     setBoards(withAccess);
   }
 
@@ -58,12 +65,10 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, [router]);
 
-  // Refetch when user returns to dashboard (e.g. after renaming a board on the board page)
   useEffect(() => {
     if (pathname === "/dashboard" && user?.id) fetchMyBoards(user.id);
   }, [pathname, user?.id]);
 
-  // Also refetch when user returns to this browser tab
   useEffect(() => {
     const userId = user?.id;
     if (!userId) return;
@@ -109,10 +114,34 @@ export default function DashboardPage() {
     setEditingBoardId(null);
   }
 
+  async function toggleStar(id: string) {
+    const board = boards.find((b) => b.id === id);
+    if (!board) return;
+    const newVal = !board.is_starred;
+    setBoards((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, is_starred: newVal } : b))
+        .sort((a, b) => {
+          if (a.is_starred !== b.is_starred) return a.is_starred ? -1 : 1;
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        })
+    );
+    await supabase.from("boards").update({ is_starred: newVal } as never).eq("id", id);
+  }
+
   async function handleSignOut() {
     await supabase.auth.signOut();
     router.push("/auth");
   }
+
+  const filteredBoards = boards.filter((b) => {
+    const matchesTab = activeTab === "all" || b.is_starred;
+    const matchesSearch = !search.trim() || b.name.toLowerCase().includes(search.toLowerCase());
+    return matchesTab && matchesSearch;
+  });
+
+  const ownedCount = boards.filter((b) => b.access === "owner").length;
+  const sharedCount = boards.filter((b) => b.access === "shared").length;
+  const starredCount = boards.filter((b) => b.is_starred).length;
 
   if (loading) {
     return (
@@ -161,11 +190,11 @@ export default function DashboardPage() {
             {createError}
           </div>
         )}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">Boards</h2>
             <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">
-              {boards.filter((b) => b.access === "owner").length} owned · {boards.filter((b) => b.access === "shared").length} shared with you
+              {ownedCount} owned · {sharedCount} shared with you
             </p>
           </div>
           <button
@@ -176,26 +205,72 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        {boards.length === 0 ? (
+        {/* Tabs + Search */}
+        <div className="flex items-center justify-between mb-5 gap-4">
+          <div className="flex gap-1 bg-gray-100 dark:bg-gray-800/60 rounded-lg p-1">
+            <button
+              onClick={() => setActiveTab("all")}
+              className={`px-3.5 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === "all" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
+            >
+              All Boards
+            </button>
+            <button
+              onClick={() => setActiveTab("starred")}
+              className={`px-3.5 py-1.5 text-sm font-medium rounded-md transition-all flex items-center gap-1.5 ${activeTab === "starred" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill={activeTab === "starred" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+              Starred{starredCount > 0 && ` (${starredCount})`}
+            </button>
+          </div>
+          <div className="relative">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search boards..."
+              className="pl-9 pr-3 py-2 w-56 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+            />
+          </div>
+        </div>
+
+        {filteredBoards.length === 0 ? (
           <div className="text-center py-20 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200/60 dark:border-gray-800/60 border-dashed">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 flex items-center justify-center mx-auto mb-4">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-blue-500 dark:text-blue-400">
-                <rect x="3" y="3" width="18" height="18" rx="3" />
-                <path d="M12 8v8M8 12h8" />
+                {activeTab === "starred" ? (
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                ) : (
+                  <>
+                    <rect x="3" y="3" width="18" height="18" rx="3" />
+                    <path d="M12 8v8M8 12h8" />
+                  </>
+                )}
               </svg>
             </div>
-            <p className="text-gray-600 dark:text-gray-300 mb-1 font-semibold text-lg">No boards yet</p>
-            <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">Create your first board to get started</p>
-            <button
-              onClick={createBoard}
-              className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-lg text-sm font-medium transition-all shadow-sm shadow-blue-500/25"
-            >
-              Create Board
-            </button>
+            <p className="text-gray-600 dark:text-gray-300 mb-1 font-semibold text-lg">
+              {activeTab === "starred" ? "No starred boards" : search ? "No matching boards" : "No boards yet"}
+            </p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">
+              {activeTab === "starred" ? "Star a board to see it here" : search ? "Try a different search term" : "Create your first board to get started"}
+            </p>
+            {activeTab === "all" && !search && (
+              <button
+                onClick={createBoard}
+                className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-lg text-sm font-medium transition-all shadow-sm shadow-blue-500/25"
+              >
+                Create Board
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {boards.map((board, i) => {
+            {filteredBoards.map((board, i) => {
               const gradients = [
                 "from-blue-500 to-indigo-500",
                 "from-emerald-500 to-teal-500",
@@ -222,38 +297,54 @@ export default function DashboardPage() {
                           <path d="M6 5h4M5 8h6M6 11h4" />
                         </svg>
                       </div>
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
-                        {board.access === "owner" && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingBoardId(board.id);
-                              setEditName(board.name);
-                            }}
-                            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
-                            title="Rename board"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
-                              <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" />
-                            </svg>
-                          </button>
-                        )}
-                        {board.access === "owner" && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeletingBoardId(board.id);
-                            }}
-                            className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 transition-all"
-                            title="Delete board"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400 hover:text-red-500">
-                              <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M12.67 4v9.33a1.33 1.33 0 01-1.34 1.34H4.67a1.33 1.33 0 01-1.34-1.34V4" />
-                            </svg>
-                          </button>
-                        )}
+                      <div className="flex items-center gap-0.5">
+                        {/* Star toggle — always visible if starred, otherwise on hover */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleStar(board.id);
+                          }}
+                          className={`p-1.5 rounded-lg transition-all ${board.is_starred ? "text-amber-400 hover:text-amber-500" : "text-gray-300 dark:text-gray-600 opacity-0 group-hover:opacity-100 hover:text-amber-400"}`}
+                          title={board.is_starred ? "Unstar" : "Star"}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill={board.is_starred ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                          </svg>
+                        </button>
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                          {board.access === "owner" && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingBoardId(board.id);
+                                setEditName(board.name);
+                              }}
+                              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+                              title="Rename board"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
+                                <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" />
+                              </svg>
+                            </button>
+                          )}
+                          {board.access === "owner" && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeletingBoardId(board.id);
+                              }}
+                              className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 transition-all"
+                              title="Delete board"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400 hover:text-red-500">
+                                <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M12.67 4v9.33a1.33 1.33 0 01-1.34 1.34H4.67a1.33 1.33 0 01-1.34-1.34V4" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                     {editingBoardId === board.id ? (

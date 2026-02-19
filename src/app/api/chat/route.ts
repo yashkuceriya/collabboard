@@ -15,11 +15,12 @@ function getSupabase(accessToken: string | null) {
 }
 
 export async function POST(req: Request) {
-  const { messages, boardId, userId, accessToken } = (await req.json()) as {
+  const { messages, boardId, userId, accessToken, interviewMode } = (await req.json()) as {
     messages: UIMessage[];
     boardId: string;
     userId: string;
     accessToken: string | null;
+    interviewMode?: boolean;
   };
 
   if (!boardId || !userId) {
@@ -67,6 +68,15 @@ export async function POST(req: Request) {
   const result = streamText({
     model: openai("gpt-4o"),
     system: `You are an AI assistant for a collaborative whiteboard called CollabBoard. You ONLY help with this whiteboard: creating and editing elements, connecting shapes, brainstorming, organizing, and summarizing board content.
+${interviewMode ? `
+INTERVIEW MODE IS ACTIVE. The user is practicing for a technical interview (system design or coding). Help them think through problems step by step. When they ask for help:
+- Break down the problem into components
+- Suggest what to draw on the whiteboard (boxes for services, arrows for data flow)
+- Ask clarifying questions like an interviewer would
+- Point out things they might be missing (scalability, edge cases, trade-offs)
+- Help analyze time/space complexity for algorithm problems
+- Be encouraging but thorough
+` : ""}
 
 Guardrails (strict):
 - Only answer requests that are clearly about the board: add/move/edit/delete elements, connect two shapes, brainstorm ideas, summarize or organize the board. If the user asks about anything else (weather, general knowledge, code, poems, other topics), do not call any tools; reply with one short decline. Example: "I can only help with your CollabBoard — things like adding stickies, connecting shapes, or summarizing the board. Try asking 'add a sticky note' or 'connect the idea to the goal'."

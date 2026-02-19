@@ -11,6 +11,7 @@ import { PresenceBar } from "@/components/presence-bar";
 import { ChatPanel } from "@/components/chat-panel";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { ShareBoardModal } from "@/components/share-board-modal";
+import { InterviewToolbar } from "@/components/interview-toolbar";
 import { useRealtimeElements } from "@/hooks/use-realtime-elements";
 import { usePresence } from "@/hooks/use-presence";
 import { sortElementsByOrder } from "@/lib/sort-elements";
@@ -32,6 +33,7 @@ export default function BoardPage() {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [showShareModal, setShowShareModal] = useState(false);
+  const [interviewMode, setInterviewMode] = useState(false);
   const searchParams = useSearchParams();
   const perfMode = searchParams.get("perf") === "1";
 
@@ -276,31 +278,37 @@ export default function BoardPage() {
   // Bring element to front (increase z_index in properties)
   const bringToFront = useCallback(
     (id: string) => {
-      const el = elements.find((e) => e.id === id);
-      if (!el) return;
-      const maxZ = Math.max(
-        ...elements.map((e) => (e.properties as Record<string, number>)?.z_index ?? 0),
-        0
-      );
-      const props = (el.properties as Record<string, unknown>) ?? {};
-      updateElement(id, { properties: { ...props, z_index: maxZ + 1 } as BoardElement["properties"] });
+      setElements((prev) => {
+        const el = prev.find((e) => e.id === id);
+        if (!el) return prev;
+        const maxZ = Math.max(...prev.map((e) => (e.properties as Record<string, number>)?.z_index ?? 0), 0);
+        const newZ = maxZ + 1;
+        const props = (el.properties as Record<string, unknown>) ?? {};
+        const newProps = { ...props, z_index: newZ } as BoardElement["properties"];
+        broadcastElementUpdated(id, { properties: newProps });
+        supabase.from("board_elements").update({ properties: newProps } as never).eq("id", id);
+        return sortElementsByOrder(prev.map((e) => (e.id === id ? { ...e, properties: newProps } : e)));
+      });
     },
-    [elements, updateElement]
+    [broadcastElementUpdated]
   );
 
   // Send element to back (decrease z_index in properties)
   const sendToBack = useCallback(
     (id: string) => {
-      const el = elements.find((e) => e.id === id);
-      if (!el) return;
-      const minZ = Math.min(
-        ...elements.map((e) => (e.properties as Record<string, number>)?.z_index ?? 0),
-        0
-      );
-      const props = (el.properties as Record<string, unknown>) ?? {};
-      updateElement(id, { properties: { ...props, z_index: minZ - 1 } as BoardElement["properties"] });
+      setElements((prev) => {
+        const el = prev.find((e) => e.id === id);
+        if (!el) return prev;
+        const minZ = Math.min(...prev.map((e) => (e.properties as Record<string, number>)?.z_index ?? 0), 0);
+        const newZ = minZ - 1;
+        const props = (el.properties as Record<string, unknown>) ?? {};
+        const newProps = { ...props, z_index: newZ } as BoardElement["properties"];
+        broadcastElementUpdated(id, { properties: newProps });
+        supabase.from("board_elements").update({ properties: newProps } as never).eq("id", id);
+        return sortElementsByOrder(prev.map((e) => (e.id === id ? { ...e, properties: newProps } : e)));
+      });
     },
-    [elements, updateElement]
+    [broadcastElementUpdated]
   );
 
   // Optimistic local-only update (no DB round-trip) — used during drag
@@ -333,6 +341,45 @@ export default function BoardPage() {
     },
     [broadcastElementDeleted, elements]
   );
+
+  const insertTemplate = useCallback(
+    async (template: "system_design" | "algorithm") => {
+      if (!user) return;
+      const items: { type: "rectangle" | "text"; x: number; y: number; w: number; h: number; text: string; color: string }[] =
+        template === "system_design"
+          ? [
+              { type: "text", x: 300, y: 50, w: 300, h: 40, text: "System Design", color: "#3B82F6" },
+              { type: "rectangle", x: 50, y: 150, w: 160, h: 80, text: "Client", color: "#60A5FA" },
+              { type: "rectangle", x: 300, y: 150, w: 160, h: 80, text: "Load Balancer", color: "#F59E0B" },
+              { type: "rectangle", x: 550, y: 100, w: 160, h: 80, text: "Server 1", color: "#10B981" },
+              { type: "rectangle", x: 550, y: 220, w: 160, h: 80, text: "Server 2", color: "#10B981" },
+              { type: "rectangle", x: 800, y: 100, w: 160, h: 80, text: "Database", color: "#8B5CF6" },
+              { type: "rectangle", x: 800, y: 220, w: 160, h: 80, text: "Cache", color: "#EF4444" },
+            ]
+          : [
+              { type: "text", x: 250, y: 50, w: 300, h: 40, text: "Algorithm / Problem", color: "#3B82F6" },
+              { type: "rectangle", x: 50, y: 150, w: 200, h: 100, text: "Input\n\n", color: "#60A5FA" },
+              { type: "rectangle", x: 320, y: 150, w: 200, h: 180, text: "Processing\n\n\n", color: "#F59E0B" },
+              { type: "rectangle", x: 590, y: 150, w: 200, h: 100, text: "Output\n\n", color: "#10B981" },
+              { type: "rectangle", x: 50, y: 380, w: 740, h: 120, text: "Notes / Complexity\n\nTime:    Space:", color: "#8B5CF6" },
+            ];
+
+      for (const item of items) {
+        await createElement(item.type as "rectangle" | "text", item.x, item.y, item.w, item.h);
+        const latest = elements[elements.length - 1];
+        if (latest) {
+          await updateElement(latest.id, { text: item.text, color: item.color });
+        }
+      }
+    },
+    [user, createElement, elements, updateElement]
+  );
+
+  const clearBoard = useCallback(async () => {
+    for (const el of elements) {
+      await deleteElement(el.id);
+    }
+  }, [elements, deleteElement]);
 
   if (loading) {
     return (
@@ -370,6 +417,7 @@ export default function BoardPage() {
           user={user}
           accessToken={accessToken}
           onClose={() => setShowChatPanel(false)}
+          interviewMode={interviewMode}
         />
       )}
 
@@ -428,6 +476,17 @@ export default function BoardPage() {
               Share
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setInterviewMode((v) => !v)}
+            className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 ${interviewMode ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm shadow-emerald-500/25" : "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-800/50"}`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <path d="M8 21h8M12 17v4" />
+            </svg>
+            Interview
+          </button>
           <ThemeSwitcher />
           <button
             type="button"
@@ -444,6 +503,14 @@ export default function BoardPage() {
           <PresenceBar peers={peers} user={user} />
         </div>
       </div>
+
+      {/* Interview toolbar */}
+      {interviewMode && (
+        <InterviewToolbar
+          onInsertTemplate={insertTemplate}
+          onClearBoard={clearBoard}
+        />
+      )}
 
       {/* Toolbar */}
       <Toolbar tool={tool} onToolChange={setTool} />

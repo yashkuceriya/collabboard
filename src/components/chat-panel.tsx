@@ -11,6 +11,7 @@ interface ChatPanelProps {
   user: User | null;
   accessToken: string | null;
   onClose: () => void;
+  interviewMode?: boolean;
 }
 
 function getMessageText(m: UIMessage): string {
@@ -32,7 +33,7 @@ function plainText(s: string): string {
     .trim();
 }
 
-export function ChatPanel({ boardId, user, accessToken, onClose }: ChatPanelProps) {
+export function ChatPanel({ boardId, user, accessToken, onClose, interviewMode }: ChatPanelProps) {
   const [input, setInput] = useState("");
 
   const transport = useMemo(
@@ -43,9 +44,10 @@ export function ChatPanel({ boardId, user, accessToken, onClose }: ChatPanelProp
           boardId,
           userId: user?.id ?? "",
           accessToken,
+          interviewMode: !!interviewMode,
         },
       }),
-    [boardId, user?.id, accessToken]
+    [boardId, user?.id, accessToken, interviewMode]
   );
 
   const { messages, sendMessage, status } = useChat({
@@ -64,12 +66,25 @@ export function ChatPanel({ boardId, user, accessToken, onClose }: ChatPanelProp
     [input, isLoading, sendMessage]
   );
 
-  const suggestions = [
-    "Brainstorm ideas about...",
-    "Summarize this board",
-    "Organize the board neatly",
-    "Add 3 sticky notes about...",
-  ];
+  const suggestions = interviewMode
+    ? [
+        "Help me design this system",
+        "Review my approach",
+        "What am I missing?",
+        "Analyze time and space complexity",
+        "Suggest edge cases to consider",
+        "Add components for a typical web app",
+      ]
+    : [
+        "Brainstorm ideas about...",
+        "Summarize this board",
+        "Organize the board neatly",
+        "Add 3 sticky notes about...",
+        "Create a flowchart for...",
+        "Design a system architecture",
+        "Add a pros/cons list",
+        "Add a title and subtitle",
+      ];
 
   return (
     <div className="absolute right-0 top-0 bottom-0 w-[340px] bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-l border-gray-200/50 dark:border-gray-800/50 shadow-2xl flex flex-col z-30">

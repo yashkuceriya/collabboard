@@ -1084,7 +1084,8 @@ export function Canvas({
                 {onBringToFront && (
                   <button
                     type="button"
-                    onClick={() => onBringToFront(selectedId)}
+                    onClick={(e) => { e.stopPropagation(); onBringToFront(selectedId); }}
+                    onMouseDown={(e) => e.stopPropagation()}
                     className="px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-700"
                     title="Bring to front"
                   >
@@ -1094,7 +1095,8 @@ export function Canvas({
                 {onSendToBack && (
                   <button
                     type="button"
-                    onClick={() => onSendToBack(selectedId)}
+                    onClick={(e) => { e.stopPropagation(); onSendToBack(selectedId); }}
+                    onMouseDown={(e) => e.stopPropagation()}
                     className="px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-700"
                     title="Send to back"
                   >

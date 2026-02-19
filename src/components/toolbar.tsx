@@ -76,11 +76,11 @@ export function Toolbar({ tool, onToolChange }: ToolbarProps) {
               ? "bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-sm shadow-blue-500/25"
               : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"
           }`}
-          title={t.tooltip}
+          title={`${t.tooltip} [${t.shortcut}]`}
         >
           <t.Icon />
           <span className="hidden sm:inline">{t.label}</span>
-          <kbd className={`hidden sm:inline text-[10px] ml-0.5 px-1 py-0.5 rounded ${
+          <kbd className={`hidden sm:inline text-[10px] ml-0.5 px-1 py-0.5 rounded font-mono ${
             tool === t.id
               ? "bg-white/20 text-white/80"
               : "bg-gray-200/80 dark:bg-gray-700/80 text-gray-400 dark:text-gray-500"
