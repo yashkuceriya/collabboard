@@ -25,7 +25,7 @@ export default function BoardPage() {
   const [showChatPanel, setShowChatPanel] = useState(false);
   const [elements, setElements] = useState<BoardElement[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tool, setTool] = useState<"select" | "sticky_note" | "rectangle" | "circle" | "text" | "connector">("select");
+  const [tool, setTool] = useState<"select" | "sticky_note" | "rectangle" | "circle" | "text" | "connector" | "pen" | "eraser">("select");
   const [openEditorForId, setOpenEditorForId] = useState<string | null>(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
   const [boardName, setBoardName] = useState("Untitled Board");
@@ -227,14 +227,74 @@ export default function BoardPage() {
     [boardId, user, broadcastElement]
   );
 
+  // Create freehand stroke (pen tool) — points in world coordinates
+  const createFreehand = useCallback(
+    async (points: { x: number; y: number }[], strokeColor = "#1a1a1a"): Promise<string | null> => {
+      if (!user || points.length < 2) return null;
+      const xs = points.map((p) => p.x);
+      const ys = points.map((p) => p.y);
+      const minX = Math.min(...xs);
+      const minY = Math.min(...ys);
+      const maxX = Math.max(...xs);
+      const maxY = Math.max(...ys);
+      const width = Math.max(maxX - minX, 2);
+      const height = Math.max(maxY - minY, 2);
+      const tempId = `temp-${Date.now()}`;
+      const now = new Date().toISOString();
+      const tempEl: BoardElement = {
+        id: tempId,
+        board_id: boardId,
+        type: "freehand",
+        x: minX,
+        y: minY,
+        width,
+        height,
+        color: strokeColor,
+        text: "",
+        properties: { points } as BoardElement["properties"],
+        created_by: user.id,
+        updated_at: now,
+        created_at: now,
+      };
+      setElements((prev) => sortElementsByOrder([...prev, tempEl]));
+      const { data, error } = await supabase
+        .from("board_elements")
+        .insert({
+          board_id: boardId,
+          type: "freehand",
+          x: minX,
+          y: minY,
+          width,
+          height,
+          color: strokeColor,
+          text: "",
+          properties: { points },
+          created_by: user.id,
+        } as never)
+        .select("*")
+        .single();
+      if (error) {
+        setElements((prev) => prev.filter((e) => e.id !== tempId));
+        return null;
+      }
+      const row = data as BoardElement | null;
+      if (row) {
+        setElements((prev) => sortElementsByOrder(prev.map((e) => (e.id === tempId ? row : e))));
+        broadcastElement(row);
+        return row.id;
+      }
+      setElements((prev) => prev.filter((e) => e.id !== tempId));
+      return null;
+    },
+    [boardId, user, broadcastElement]
+  );
+
   // Update element (persists to Supabase + broadcasts to peers)
   const updateElement = useCallback(
     async (id: string, updates: Partial<BoardElement>) => {
-      // Also update local state immediately for responsiveness (re-sort for z_index changes)
       setElements((prev) =>
         sortElementsByOrder(prev.map((e) => (e.id === id ? { ...e, ...updates } : e)))
       );
-      // Broadcast so other clients see the update immediately
       broadcastElementUpdated(id, updates);
       await supabase
         .from("board_elements")
@@ -243,6 +303,27 @@ export default function BoardPage() {
     },
     [broadcastElementUpdated]
   );
+
+  // Insert large code block (for coding interview)
+  const insertCodeBlock = useCallback(async () => {
+    if (!user) return null;
+    const w = 720;
+    const h = 420;
+    const centerWorldX = typeof window !== "undefined" ? (window.innerWidth / 2 - viewport.x) / viewport.zoom : 400;
+    const centerWorldY = typeof window !== "undefined" ? (window.innerHeight / 2 - viewport.y) / viewport.zoom - 80 : 300;
+    const cx = centerWorldX - w / 2;
+    const cy = centerWorldY - h / 2;
+    const id = await createElement("text", cx, cy, w, h);
+    if (id) {
+      await updateElement(id, {
+        text: "// Your code here\n\nfunction solution() {\n  \n}",
+        color: "#1e293b",
+        properties: { fontFamily: "mono", fontSize: "medium" } as BoardElement["properties"],
+      });
+      setOpenEditorForId(id);
+    }
+    return id;
+  }, [user, viewport, createElement, updateElement]);
 
   // Duplicate selected element (offset by 20,20). Non-connector only.
   const duplicateElement = useCallback(
@@ -364,15 +445,25 @@ export default function BoardPage() {
               { type: "rectangle", x: 50, y: 380, w: 740, h: 120, text: "Notes / Complexity\n\nTime:    Space:", color: "#8B5CF6" },
             ];
 
+      const createdIds: (string | null)[] = [];
       for (const item of items) {
-        await createElement(item.type as "rectangle" | "text", item.x, item.y, item.w, item.h);
-        const latest = elements[elements.length - 1];
-        if (latest) {
-          await updateElement(latest.id, { text: item.text, color: item.color });
-        }
+        const id = await createElement(item.type as "rectangle" | "text", item.x, item.y, item.w, item.h);
+        createdIds.push(id ?? null);
+        if (id) await updateElement(id, { text: item.text, color: item.color });
+      }
+
+      if (template === "system_design" && createConnector) {
+        const [, client, lb, s1, s2, db, cache] = createdIds;
+        if (client && lb) await createConnector(client, lb);
+        if (lb && s1) await createConnector(lb, s1);
+        if (lb && s2) await createConnector(lb, s2);
+        if (s1 && db) await createConnector(s1, db);
+        if (s1 && cache) await createConnector(s1, cache);
+        if (s2 && db) await createConnector(s2, db);
+        if (s2 && cache) await createConnector(s2, cache);
       }
     },
-    [user, createElement, elements, updateElement]
+    [user, createElement, updateElement, createConnector]
   );
 
   const clearBoard = useCallback(async () => {
@@ -507,7 +598,10 @@ export default function BoardPage() {
       {/* Interview toolbar */}
       {interviewMode && (
         <InterviewToolbar
+          tool={tool}
+          onToolChange={setTool}
           onInsertTemplate={insertTemplate}
+          onInsertCodeBlock={insertCodeBlock}
           onClearBoard={clearBoard}
         />
       )}
@@ -527,6 +621,7 @@ export default function BoardPage() {
           if (type === "text" && id) setOpenEditorForId(id);
         }}
         onCreateConnector={createConnector}
+        onCreateFreehand={createFreehand}
         onUpdate={updateElement}
         onDelete={deleteElement}
         onDuplicate={duplicateElement}

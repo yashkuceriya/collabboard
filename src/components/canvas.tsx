@@ -7,7 +7,7 @@ import { FormatPanel } from "@/components/format-panel";
 import type { BoardElement } from "@/lib/types/database";
 import type { Peer } from "@/hooks/use-presence";
 
-type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "text" | "connector";
+type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "text" | "connector" | "pen" | "eraser";
 
 interface CanvasProps {
   elements: BoardElement[];
@@ -17,6 +17,7 @@ interface CanvasProps {
   onToolChange: (t: ToolId) => void;
   onCreate: (type: "sticky_note" | "rectangle" | "circle" | "text", x: number, y: number, width?: number, height?: number) => void | Promise<void>;
   onCreateConnector?: (fromId: string, toId: string) => void | Promise<void | string | null>;
+  onCreateFreehand?: (points: { x: number; y: number }[], strokeColor?: string) => void | Promise<string | null>;
   onUpdate: (id: string, updates: Partial<BoardElement>) => void;
   onDelete: (id: string) => void;
   onDuplicate?: (id: string) => void | Promise<string | null>;
@@ -232,6 +233,7 @@ export function Canvas({
   onToolChange,
   onCreate,
   onCreateConnector,
+  onCreateFreehand,
   onUpdate,
   onDelete,
   onDuplicate,
@@ -275,6 +277,7 @@ export function Canvas({
   const [connectorFromId, setConnectorFromId] = useState<string | null>(null);
   const [connectorPreview, setConnectorPreview] = useState<{ x: number; y: number } | null>(null);
   const [formatPanelOpen, setFormatPanelOpen] = useState(false);
+  const [strokePoints, setStrokePoints] = useState<{ x: number; y: number }[]>([]);
 
   // When board asks to open editor for a newly created text element, do it once it appears
   useEffect(() => {
@@ -315,6 +318,13 @@ export function Canvas({
         if (el.type === "connector") {
           const pts = getConnectorEndpoints(el, elements);
           if (pts && distanceToSegment(x, y, pts.x1, pts.y1, pts.x2, pts.y2) <= threshold) return el;
+        } else if (el.type === "freehand") {
+          const pts = (el.properties as { points?: { x: number; y: number }[] })?.points;
+          if (pts && pts.length >= 2) {
+            for (let j = 0; j < pts.length - 1; j++) {
+              if (distanceToSegment(x, y, pts[j].x, pts[j].y, pts[j + 1].x, pts[j + 1].y) <= threshold) return el;
+            }
+          }
         } else if (x >= el.x && x <= el.x + el.width && y >= el.y && y <= el.y + el.height) {
           return el;
         }
@@ -479,6 +489,18 @@ export function Canvas({
           const lineX = textAlign === "center" ? x + width / 2 - tw / 2 : textAlign === "right" ? x + width - tPad - tw : x + tPad;
           ctx.fillText(line, lineX, lineY);
         });
+      } else if (el.type === "freehand") {
+        const pts = (el.properties as { points?: { x: number; y: number }[] })?.points;
+        if (pts && pts.length >= 2) {
+          ctx.strokeStyle = el.color;
+          ctx.lineWidth = Math.max(2 / viewport.zoom, 2);
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x, pts[0].y);
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+          ctx.stroke();
+        }
       }
 
       // Selection outline
@@ -579,10 +601,24 @@ export function Canvas({
       }
     }
 
-    // Resize handles (when selected and not resizing; only for non-connector elements)
+    // Pen stroke preview
+    if (tool === "pen" && strokePoints.length >= 2) {
+      ctx.save();
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = Math.max(2 / viewport.zoom, 2);
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      ctx.moveTo(strokePoints[0].x, strokePoints[0].y);
+      for (let i = 1; i < strokePoints.length; i++) ctx.lineTo(strokePoints[i].x, strokePoints[i].y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Resize handles (when selected and not resizing; only for non-connector, non-freehand elements)
     if (selectedId && !resizing) {
       const el = elements.find((e) => e.id === selectedId);
-      if (el && el.type !== "connector") {
+      if (el && el.type !== "connector" && el.type !== "freehand") {
         const handles = getResizeHandles(el);
         ctx.fillStyle = "#3b82f6";
         ctx.strokeStyle = isDark ? "#1f2937" : "#fff";
@@ -628,7 +664,7 @@ export function Canvas({
       ctx.restore();
     });
     if (perfMode) drawCountRef.current++;
-  }, [elements, viewport, selectedId, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, tool, connectorFromId, connectorPreview, perfMode]);
+  }, [elements, viewport, selectedId, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, tool, connectorFromId, connectorPreview, strokePoints, perfMode]);
 
   // FPS sampling when perf mode is on
   useEffect(() => {
@@ -662,10 +698,19 @@ export function Canvas({
     if (!rect) return;
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
+    const world = screenToWorld(sx, sy);
+
+    if (tool === "pen") {
+      setStrokePoints([{ x: world.x, y: world.y }]);
+      return;
+    }
+    if (tool === "eraser") {
+      const hit = hitTest(sx, sy);
+      if (hit?.type === "freehand") onDelete(hit.id);
+      return;
+    }
 
     if (tool === "select") {
-      const world = screenToWorld(sx, sy);
-
       // Resize handle has priority when something is selected
       if (selectedId) {
         const el = elements.find((e) => e.id === selectedId);
@@ -693,7 +738,6 @@ export function Canvas({
         panStartRef.current = { x: e.clientX - viewport.x, y: e.clientY - viewport.y };
       }
     } else if (tool === "connector") {
-      const world = screenToWorld(sx, sy);
       const hit = hitTest(sx, sy);
       if (hit && hit.type !== "connector") {
         setConnectorFromId(hit.id);
@@ -705,10 +749,8 @@ export function Canvas({
         // Don't start panning — use Select tool to pan. Keeps connector mode clear.
       }
     } else if (tool === "rectangle" || tool === "circle") {
-      const world = screenToWorld(sx, sy);
       setDrawDraft({ startX: world.x, startY: world.y, currentX: world.x, currentY: world.y });
     } else if (tool === "sticky_note" || tool === "text") {
-      const world = screenToWorld(sx, sy);
       void onCreate(tool, world.x, world.y);
       onToolChange("select");
     }
@@ -723,6 +765,13 @@ export function Canvas({
     // Broadcast cursor position in world coords
     const world = screenToWorld(sx, sy);
     onCursorMove(world.x, world.y);
+
+    // Pen stroke: append point while dragging (with small threshold to reduce points)
+    if (strokePoints.length > 0) {
+      const last = strokePoints[strokePoints.length - 1];
+      const dx = world.x - last.x, dy = world.y - last.y;
+      if (dx * dx + dy * dy > 4) setStrokePoints((prev) => [...prev, { x: world.x, y: world.y }]);
+    }
 
     // Hover detection for cursor feedback
     if (!dragging && !panning && !resizing && !drawDraft && !connectorFromId && tool === "select") {
@@ -818,6 +867,10 @@ export function Canvas({
   }
 
   function handleMouseUp(e?: React.MouseEvent) {
+    if (strokePoints.length >= 2 && onCreateFreehand) {
+      void onCreateFreehand([...strokePoints]);
+      setStrokePoints([]);
+    }
     if (drawDraft && (tool === "rectangle" || tool === "circle")) {
       const x = Math.min(drawDraft.startX, drawDraft.currentX);
       const y = Math.min(drawDraft.startY, drawDraft.currentY);
