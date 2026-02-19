@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useCallback, useState } from "react";
+import { useRef, useEffect, useLayoutEffect, useCallback, useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { ColorPicker } from "@/components/color-picker";
 import { FormatPanel } from "@/components/format-panel";
@@ -275,6 +275,7 @@ export function Canvas({
   } | null>(null);
   const [drawDraft, setDrawDraft] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
   const [connectorFromId, setConnectorFromId] = useState<string | null>(null);
+  const [connectorFromPoint, setConnectorFromPoint] = useState<{ x: number; y: number } | null>(null);
   const [connectorPreview, setConnectorPreview] = useState<{ x: number; y: number } | null>(null);
   const [formatPanelOpen, setFormatPanelOpen] = useState(false);
   const [strokePoints, setStrokePoints] = useState<{ x: number; y: number }[]>([]);
@@ -291,26 +292,26 @@ export function Canvas({
     }
   }, [openEditorForId, onOpenEditorFulfilled, elements]);
 
-  // Place cursor at start (top) when opening text editor
-  useEffect(() => {
+  // Place cursor at start (top) for all editable text: sticky notes, shapes, text/code blocks. Run before paint.
+  useLayoutEffect(() => {
     if (!editingId) return;
+    const run = (el: HTMLTextAreaElement) => {
+      el.focus();
+      el.setSelectionRange(0, 0);
+      el.scrollTop = 0;
+    };
     const ta = editTextareaRef.current;
     if (ta) {
-      let id2: number | undefined;
-      const run = () => {
-        ta.focus();
-        ta.setSelectionRange(0, 0);
-        ta.scrollTop = 0;
-      };
-      const id1 = requestAnimationFrame(() => {
-        run();
-        id2 = requestAnimationFrame(run); // after layout so view stays at top
-      });
-      return () => {
-        cancelAnimationFrame(id1);
-        if (id2 !== undefined) cancelAnimationFrame(id2);
-      };
+      run(ta);
+      const id = requestAnimationFrame(() => run(ta));
+      return () => cancelAnimationFrame(id);
     }
+    // Ref may not be set yet (conditional render); try again next frame
+    const id = requestAnimationFrame(() => {
+      const el = editTextareaRef.current;
+      if (el) run(el);
+    });
+    return () => cancelAnimationFrame(id);
   }, [editingId]);
 
   // Screen coords → world coords
@@ -602,33 +603,66 @@ export function Canvas({
       ctx.restore();
     }
 
-    // Connector drag preview (edge to cursor)
-    if (connectorFromId && connectorPreview) {
-      const fromEl = elements.find((e) => e.id === connectorFromId && e.type !== "connector");
-      if (fromEl) {
-        const edgePt = clipToShapeEdge(fromEl, connectorPreview.x, connectorPreview.y);
+    // Connector drag preview (from edge point where user clicked to cursor)
+    if (connectorFromId && connectorFromPoint && connectorPreview) {
+      ctx.save();
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 2 / viewport.zoom;
+      ctx.setLineDash([6 / viewport.zoom, 4 / viewport.zoom]);
+      ctx.beginPath();
+      ctx.moveTo(connectorFromPoint.x, connectorFromPoint.y);
+      ctx.lineTo(connectorPreview.x, connectorPreview.y);
+      ctx.stroke();
+      const angle = Math.atan2(connectorPreview.y - connectorFromPoint.y, connectorPreview.x - connectorFromPoint.x);
+      ctx.fillStyle = strokeColor;
+      ctx.beginPath();
+      ctx.moveTo(connectorPreview.x, connectorPreview.y);
+      ctx.lineTo(
+        connectorPreview.x - arrowLen * Math.cos(angle - 0.4),
+        connectorPreview.y - arrowLen * Math.sin(angle - 0.4)
+      );
+      ctx.lineTo(
+        connectorPreview.x - arrowLen * Math.cos(angle + 0.4),
+        connectorPreview.y - arrowLen * Math.sin(angle + 0.4)
+      );
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Edge anchor dot at the connectorFromPoint
+    if (connectorFromPoint && connectorFromId) {
+      ctx.save();
+      ctx.fillStyle = "#3b82f6";
+      ctx.strokeStyle = isDark ? "#1f2937" : "#fff";
+      ctx.lineWidth = 2 / viewport.zoom;
+      ctx.beginPath();
+      ctx.arc(connectorFromPoint.x, connectorFromPoint.y, 5 / viewport.zoom, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Edge anchor dots on hovered shapes in connector mode (midpoints of each side)
+    if (tool === "connector" && !connectorFromId) {
+      const hovEl = elements.find((e) => e.id === hoveredId && e.type !== "connector" && e.type !== "freehand");
+      if (hovEl) {
+        const anchors = [
+          { x: hovEl.x + hovEl.width / 2, y: hovEl.y },
+          { x: hovEl.x + hovEl.width, y: hovEl.y + hovEl.height / 2 },
+          { x: hovEl.x + hovEl.width / 2, y: hovEl.y + hovEl.height },
+          { x: hovEl.x, y: hovEl.y + hovEl.height / 2 },
+        ];
         ctx.save();
-        ctx.strokeStyle = strokeColor;
+        ctx.fillStyle = "#3b82f6";
+        ctx.strokeStyle = isDark ? "#1f2937" : "#fff";
         ctx.lineWidth = 2 / viewport.zoom;
-        ctx.setLineDash([6 / viewport.zoom, 4 / viewport.zoom]);
-        ctx.beginPath();
-        ctx.moveTo(edgePt.x, edgePt.y);
-        ctx.lineTo(connectorPreview.x, connectorPreview.y);
-        ctx.stroke();
-        const angle = Math.atan2(connectorPreview.y - edgePt.y, connectorPreview.x - edgePt.x);
-        ctx.fillStyle = strokeColor;
-        ctx.beginPath();
-        ctx.moveTo(connectorPreview.x, connectorPreview.y);
-        ctx.lineTo(
-          connectorPreview.x - arrowLen * Math.cos(angle - 0.4),
-          connectorPreview.y - arrowLen * Math.sin(angle - 0.4)
-        );
-        ctx.lineTo(
-          connectorPreview.x - arrowLen * Math.cos(angle + 0.4),
-          connectorPreview.y - arrowLen * Math.sin(angle + 0.4)
-        );
-        ctx.closePath();
-        ctx.fill();
+        for (const a of anchors) {
+          ctx.beginPath();
+          ctx.arc(a.x, a.y, 5 / viewport.zoom, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
         ctx.restore();
       }
     }
@@ -696,7 +730,7 @@ export function Canvas({
       ctx.restore();
     });
     if (perfMode) drawCountRef.current++;
-  }, [elements, viewport, selectedId, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, tool, connectorFromId, connectorPreview, strokePoints, perfMode]);
+  }, [elements, viewport, selectedId, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, perfMode]);
 
   // FPS sampling when perf mode is on
   useEffect(() => {
@@ -772,13 +806,15 @@ export function Canvas({
     } else if (tool === "connector") {
       const hit = hitTest(sx, sy);
       if (hit && hit.type !== "connector") {
+        const edgePt = clipToShapeEdge(hit, world.x, world.y);
         setConnectorFromId(hit.id);
+        setConnectorFromPoint(edgePt);
         setConnectorPreview({ x: world.x, y: world.y });
       } else {
         setSelectedId(null);
         setConnectorFromId(null);
+        setConnectorFromPoint(null);
         setConnectorPreview(null);
-        // Don't start panning — use Select tool to pan. Keeps connector mode clear.
       }
     } else if (tool === "rectangle" || tool === "circle") {
       setDrawDraft({ startX: world.x, startY: world.y, currentX: world.x, currentY: world.y });
@@ -806,7 +842,7 @@ export function Canvas({
     }
 
     // Hover detection for cursor feedback
-    if (!dragging && !panning && !resizing && !drawDraft && !connectorFromId && tool === "select") {
+    if (!dragging && !panning && !resizing && !drawDraft && !connectorFromId && (tool === "select" || tool === "connector")) {
       const hit = hitTest(sx, sy);
       setHoveredId(hit?.id ?? null);
     }
@@ -915,13 +951,16 @@ export function Canvas({
     if (connectorFromId) {
       if (canvasRef.current && e) {
         const rect = canvasRef.current.getBoundingClientRect();
-        const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+        const sx2 = e.clientX - rect.left;
+        const sy2 = e.clientY - rect.top;
+        const hit = hitTest(sx2, sy2);
         if (hit && hit.id !== connectorFromId && hit.type !== "connector" && onCreateConnector) {
           void onCreateConnector(connectorFromId, hit.id);
           onToolChange("select");
         }
       }
       setConnectorFromId(null);
+      setConnectorFromPoint(null);
       setConnectorPreview(null);
     }
     if (resizing && resizeDraft) {
@@ -1073,7 +1112,7 @@ export function Canvas({
       {/* Connector tool hint — makes it clear arrows connect shapes */}
       {tool === "connector" && (
         <div className="absolute bottom-14 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-xl bg-gray-900/90 dark:bg-gray-100/90 text-white dark:text-gray-900 text-xs font-medium shadow-lg border border-gray-700/50 dark:border-gray-300/50">
-          Click a shape, then another to connect them with an arrow
+          Click on a shape&apos;s edge to start, then click another shape&apos;s edge to connect
         </div>
       )}
 
@@ -1356,7 +1395,6 @@ export function Canvas({
         return (
           <textarea
             ref={editTextareaRef}
-            autoFocus
             tabIndex={0}
             aria-label="Edit text"
             className={`absolute border-2 resize-none outline-none z-[100] focus:ring-2 focus:ring-blue-400 box-border ${isCodeBlock ? "border-blue-600 dark:border-blue-400" : "border-blue-500"}`}

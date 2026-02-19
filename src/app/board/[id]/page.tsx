@@ -642,8 +642,8 @@ export default function BoardPage() {
         />
       )}
 
-      {/* Toolbar */}
-      <Toolbar tool={tool} onToolChange={setTool} />
+      {/* Bottom toolbar — hidden in interview mode (interview toolbar replaces it) */}
+      {!interviewMode && <Toolbar tool={tool} onToolChange={setTool} />}
 
       {/* Canvas */}
       <Canvas

@@ -1,9 +1,13 @@
+import * as ai from "ai";
 import { streamText, tool, stepCountIs, convertToModelMessages } from "ai";
 import type { UIMessage } from "ai";
 import { openai } from "@ai-sdk/openai";
+import { wrapAISDK } from "langsmith/experimental/vercel";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { Database } from "@/lib/types/database";
+
+const traced = process.env.LANGCHAIN_API_KEY ? wrapAISDK(ai) : null;
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -40,7 +44,19 @@ export async function POST(req: Request) {
     return data as { id: string; type: string } | null;
   }
 
-  // Helper: compute a position (x,y) that does not overlap existing non-connector elements. Used for smarter layout.
+  // Contrast text color: dark text on light bg, light text on dark bg
+  function contrastTextColor(hex: string): string {
+    const c = hex.replace("#", "");
+    if (c.length < 6) return "#1a1a1a";
+    const r = parseInt(c.substring(0, 2), 16) / 255;
+    const g = parseInt(c.substring(2, 4), 16) / 255;
+    const b = parseInt(c.substring(4, 6), 16) / 255;
+    const toLinear = (v: number) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+    const lum = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+    return lum > 0.4 ? "#1a1a1a" : "#f3f4f6";
+  }
+
+  // Helper: compute a position (x,y) that does not overlap existing non-connector elements.
   async function computeSuggestedPlacement(
     width: number = 200,
     height: number = 200
@@ -56,17 +72,31 @@ export async function POST(req: Request) {
     if (elements.length === 0) return { x: padding, y: padding };
     const maxRight = Math.max(...elements.map((el) => el.x + el.width));
     const maxBottom = Math.max(...elements.map((el) => el.y + el.height));
-    // Place to the right of rightmost if there's room, else below lowest
     const placeRight = maxRight + gap + width <= 1400;
     if (placeRight) return { x: maxRight + gap, y: padding };
     return { x: padding, y: maxBottom + gap };
   }
 
+  // Check if (x,y,w,h) overlaps any existing element on the board
+  async function hasOverlap(x: number, y: number, w: number, h: number): Promise<boolean> {
+    const { data } = await supabase
+      .from("board_elements")
+      .select("x, y, width, height")
+      .eq("board_id", boardId)
+      .neq("type", "connector");
+    const elements = (data ?? []) as { x: number; y: number; width: number; height: number }[];
+    return elements.some((el) =>
+      x < el.x + el.width && x + w > el.x && y < el.y + el.height && y + h > el.y
+    );
+  }
+
   // Convert UIMessage[] (parts-based) to ModelMessage[] (content-based) for streamText
   const modelMessages = await convertToModelMessages(messages);
 
-  const result = streamText({
-    model: openai("gpt-4o"),
+  const streamFn = traced?.streamText ?? streamText;
+
+  const result = streamFn({
+    model: openai("gpt-4o-mini"),
     system: `You are an AI assistant for a collaborative whiteboard called CollabBoard. You ONLY help with this whiteboard: creating and editing elements, connecting shapes, brainstorming, organizing, and summarizing board content.
 ${interviewMode ? `
 INTERVIEW MODE IS ACTIVE. The user is practicing for a technical interview (system design or coding). Help them think through problems step by step. When they ask for help:
@@ -104,7 +134,8 @@ Guidelines:
 - Keep text responses brief and helpful. After using tools, confirm what you did in plain language.
 - For brainstorming, create 4-8 sticky notes with distinct ideas using generateIdeas.
 - When summarizing the board, always create a sticky note with the summary text so the user sees it on the board; then briefly confirm in your reply.
-- Default sticky note colors: #FFEB3B (yellow), #FF9800 (orange), #F48FB1 (pink), #CE93D8 (purple), #90CAF9 (blue), #80CBC4 (teal), #A5D6A7 (green).`,
+- Default sticky note colors: #FFEB3B (yellow), #FF9800 (orange), #F48FB1 (pink), #CE93D8 (purple), #90CAF9 (blue), #80CBC4 (teal), #A5D6A7 (green).
+- Always ensure text on stickies and text elements is readable: use dark text on light backgrounds and light text on dark backgrounds. The server sets textColor automatically, but prefer light background colors (the defaults above) so text is always clearly visible.`,
     messages: modelMessages,
     stopWhen: stepCountIs(5),
     tools: {
@@ -140,17 +171,25 @@ Guidelines:
           color: z.string().describe("Hex color e.g. #FFEB3B").optional(),
         }),
         execute: async ({ text, x, y, color }) => {
+          const bg = color ?? "#FFEB3B";
+          let posX = x, posY = y;
+          if (await hasOverlap(posX, posY, 200, 200)) {
+            const safe = await computeSuggestedPlacement(200, 200);
+            posX = safe.x;
+            posY = safe.y;
+          }
           const { data, error } = await supabase
             .from("board_elements")
             .insert({
               board_id: boardId,
               type: "sticky_note",
-              x,
-              y,
+              x: posX,
+              y: posY,
               width: 200,
               height: 200,
-              color: color ?? "#FFEB3B",
+              color: bg,
               text: text ?? "New note",
+              properties: { textColor: contrastTextColor(bg) },
               created_by: userId,
             } as never)
             .select("id")
@@ -172,13 +211,19 @@ Guidelines:
         execute: async ({ shapeType, x, y, width, height, color }) => {
           const w = width ?? 150;
           const h = height ?? 100;
+          let posX = x, posY = y;
+          if (await hasOverlap(posX, posY, w, h)) {
+            const safe = await computeSuggestedPlacement(w, h);
+            posX = safe.x;
+            posY = safe.y;
+          }
           const { data, error } = await supabase
             .from("board_elements")
             .insert({
               board_id: boardId,
               type: shapeType,
-              x,
-              y,
+              x: posX,
+              y: posY,
               width: w,
               height: h,
               color: color ?? "#42A5F5",
@@ -315,15 +360,19 @@ Guidelines:
           ideas: z.array(z.string()).describe("Array of idea texts, 4-8 items"),
         }),
         execute: async ({ ideas }) => {
-          const start = await computeSuggestedPlacement(200, 200);
           const colors = ["#FFEB3B", "#FF9800", "#F48FB1", "#CE93D8", "#90CAF9", "#80CBC4", "#A5D6A7", "#FFFFFF"];
           const cols = Math.min(4, ideas.length);
+          const rows = Math.ceil(ideas.length / cols);
+          const gridW = cols * 220;
+          const gridH = rows * 220;
+          const start = await computeSuggestedPlacement(gridW, gridH);
           const created: string[] = [];
           for (let i = 0; i < ideas.length; i++) {
             const col = i % cols;
             const row = Math.floor(i / cols);
             const x = start.x + col * 220;
             const y = start.y + row * 220;
+            const bg = colors[i % colors.length];
             const { data, error } = await supabase
               .from("board_elements")
               .insert({
@@ -333,8 +382,9 @@ Guidelines:
                 y,
                 width: 200,
                 height: 200,
-                color: colors[i % colors.length],
+                color: bg,
                 text: ideas[i],
+                properties: { textColor: contrastTextColor(bg) },
                 created_by: userId,
               } as never)
               .select("id")
@@ -353,17 +403,27 @@ Guidelines:
           color: z.string().describe("Hex color for the text box").optional(),
         }),
         execute: async ({ text, x, y, color }) => {
+          const bg = color ?? "#3B82F6";
+          const w = Math.max(180, text.length * 9);
+          const h = 40;
+          let posX = x, posY = y;
+          if (await hasOverlap(posX, posY, w, h)) {
+            const safe = await computeSuggestedPlacement(w, h);
+            posX = safe.x;
+            posY = safe.y;
+          }
           const { data, error } = await supabase
             .from("board_elements")
             .insert({
               board_id: boardId,
               type: "text",
-              x,
-              y,
-              width: Math.max(180, text.length * 9),
-              height: 40,
-              color: color ?? "#3B82F6",
+              x: posX,
+              y: posY,
+              width: w,
+              height: h,
+              color: bg,
               text,
+              properties: { textColor: contrastTextColor(bg) },
               created_by: userId,
             } as never)
             .select("id")
