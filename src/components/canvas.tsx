@@ -7,7 +7,7 @@ import { FormatPanel } from "@/components/format-panel";
 import type { BoardElement } from "@/lib/types/database";
 import type { Peer } from "@/hooks/use-presence";
 
-type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "text" | "connector" | "pen" | "eraser";
+type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "line" | "text" | "connector" | "pen" | "eraser";
 
 interface CanvasProps {
   elements: BoardElement[];
@@ -15,7 +15,7 @@ interface CanvasProps {
   onViewportChange: (v: { x: number; y: number; zoom: number }) => void;
   tool: ToolId;
   onToolChange: (t: ToolId) => void;
-  onCreate: (type: "sticky_note" | "rectangle" | "circle" | "text", x: number, y: number, width?: number, height?: number) => void | Promise<void>;
+  onCreate: (type: "sticky_note" | "rectangle" | "circle" | "text" | "frame" | "line", x: number, y: number, width?: number, height?: number) => void | Promise<void>;
   onCreateConnector?: (fromId: string, toId: string) => void | Promise<void | string | null>;
   onCreateFreehand?: (points: { x: number; y: number }[], strokeColor?: string) => void | Promise<string | null>;
   onUpdate: (id: string, updates: Partial<BoardElement>) => void;
@@ -259,6 +259,8 @@ export function Canvas({
   const viewportRef = useRef(viewport);
   useEffect(() => { viewportRef.current = viewport; });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [marquee, setMarquee] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -280,6 +282,7 @@ export function Canvas({
   const [formatPanelOpen, setFormatPanelOpen] = useState(false);
   const [strokePoints, setStrokePoints] = useState<{ x: number; y: number }[]>([]);
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const clipboardRef = useRef<BoardElement[]>([]);
 
   // When board asks to open editor for a newly created text element, do it once it appears
   useEffect(() => {
@@ -420,7 +423,7 @@ export function Canvas({
       ctx.save();
 
       const rotation = (el.properties as { rotation?: number } | undefined)?.rotation ?? 0;
-      if (rotation && (el.type === "sticky_note" || el.type === "rectangle" || el.type === "circle" || el.type === "text")) {
+      if (rotation && (el.type === "sticky_note" || el.type === "rectangle" || el.type === "circle" || el.type === "text" || el.type === "frame")) {
         const cx = x + width / 2;
         const cy = y + height / 2;
         ctx.translate(cx, cy);
@@ -522,6 +525,31 @@ export function Canvas({
           const lineX = textAlign === "center" ? x + width / 2 - tw / 2 : textAlign === "right" ? x + width - tPad - tw : x + tPad;
           ctx.fillText(line, lineX, lineY);
         });
+      } else if (el.type === "line") {
+        const props = el.properties as { x2?: number; y2?: number } | undefined;
+        const x2 = x + (props?.x2 ?? width);
+        const y2 = y + (props?.y2 ?? height);
+        ctx.strokeStyle = el.color;
+        ctx.lineWidth = 2.5 / viewport.zoom;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      } else if (el.type === "frame") {
+        ctx.strokeStyle = el.color;
+        ctx.lineWidth = 2 / viewport.zoom;
+        ctx.setLineDash([8 / viewport.zoom, 4 / viewport.zoom]);
+        ctx.beginPath();
+        ctx.roundRect(x, y, width, height, 8);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (el.text) {
+          const frameFont = getElementFontSize(el);
+          ctx.fillStyle = el.color;
+          ctx.font = `bold ${frameFont.canvas}px Inter, system-ui, sans-serif`;
+          ctx.fillText(el.text, x + 10, y - 6);
+        }
       } else if (el.type === "freehand") {
         const pts = (el.properties as { points?: { x: number; y: number }[] })?.points;
         if (pts && pts.length >= 2) {
@@ -536,14 +564,15 @@ export function Canvas({
         }
       }
 
-      // Selection outline
-      if (el.id === selectedId) {
+      // Selection outline (single or multi)
+      if (el.id === selectedId || selectedIds.has(el.id)) {
         ctx.strokeStyle = "#3b82f6";
         ctx.lineWidth = 1.5 / viewport.zoom;
-        ctx.setLineDash([]);
+        ctx.setLineDash(selectedIds.has(el.id) && el.id !== selectedId ? [4 / viewport.zoom, 3 / viewport.zoom] : []);
         ctx.beginPath();
         ctx.roundRect(x - 3, y - 3, width + 6, height + 6, 6);
         ctx.stroke();
+        ctx.setLineDash([]);
       }
 
       ctx.restore();
@@ -562,14 +591,18 @@ export function Canvas({
       const ch = Math.abs(pts.y2 - pts.y1);
       if (!inView(cx, cy, cw || 1, ch || 1)) continue;
       ctx.save();
-      ctx.strokeStyle = el.id === selectedId ? "#3b82f6" : strokeColor;
+      const connColor = el.color && el.color !== "#64748b" ? el.color : (el.id === selectedId ? "#3b82f6" : strokeColor);
+      ctx.strokeStyle = el.id === selectedId ? "#3b82f6" : connColor;
       ctx.lineWidth = (el.id === selectedId ? 2.5 : 2) / viewport.zoom;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
+      const connStyle = (el.properties as { style?: string })?.style;
+      if (connStyle === "dashed") ctx.setLineDash([8 / viewport.zoom, 4 / viewport.zoom]);
       ctx.beginPath();
       ctx.moveTo(pts.x1, pts.y1);
       ctx.lineTo(pts.x2, pts.y2);
       ctx.stroke();
+      if (connStyle === "dashed") ctx.setLineDash([]);
       const angle = Math.atan2(pts.y2 - pts.y1, pts.x2 - pts.x1);
       ctx.fillStyle = el.id === selectedId ? "#3b82f6" : strokeColor;
       ctx.beginPath();
@@ -581,24 +614,33 @@ export function Canvas({
       ctx.restore();
     }
 
-    // Draw-by-drag preview (rectangle / circle)
-    if (drawDraft && (tool === "rectangle" || tool === "circle")) {
-      const x = Math.min(drawDraft.startX, drawDraft.currentX);
-      const y = Math.min(drawDraft.startY, drawDraft.currentY);
-      const w = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentX - drawDraft.startX));
-      const h = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentY - drawDraft.startY));
+    // Draw-by-drag preview (rectangle / circle / line)
+    if (drawDraft && (tool === "rectangle" || tool === "circle" || tool === "line")) {
       ctx.save();
-      ctx.strokeStyle = tool === "rectangle" ? "#42A5F5" : "#10B981";
       ctx.lineWidth = 2 / viewport.zoom;
       ctx.setLineDash([6 / viewport.zoom, 4 / viewport.zoom]);
-      if (tool === "rectangle") {
+      if (tool === "line") {
+        ctx.strokeStyle = "#64748b";
+        ctx.lineCap = "round";
         ctx.beginPath();
-        ctx.roundRect(x, y, w, h, 4);
+        ctx.moveTo(drawDraft.startX, drawDraft.startY);
+        ctx.lineTo(drawDraft.currentX, drawDraft.currentY);
         ctx.stroke();
       } else {
-        ctx.beginPath();
-        ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-        ctx.stroke();
+        const x = Math.min(drawDraft.startX, drawDraft.currentX);
+        const y = Math.min(drawDraft.startY, drawDraft.currentY);
+        const w = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentX - drawDraft.startX));
+        const h = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentY - drawDraft.startY));
+        ctx.strokeStyle = tool === "rectangle" ? "#42A5F5" : "#10B981";
+        if (tool === "rectangle") {
+          ctx.beginPath();
+          ctx.roundRect(x, y, w, h, 4);
+          ctx.stroke();
+        } else {
+          ctx.beginPath();
+          ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
       }
       ctx.restore();
     }
@@ -681,6 +723,25 @@ export function Canvas({
       ctx.restore();
     }
 
+    // Marquee selection rectangle
+    if (marquee) {
+      const mx = Math.min(marquee.startX, marquee.currentX);
+      const my = Math.min(marquee.startY, marquee.currentY);
+      const mw = Math.abs(marquee.currentX - marquee.startX);
+      const mh = Math.abs(marquee.currentY - marquee.startY);
+      ctx.save();
+      ctx.fillStyle = "rgba(59,130,246,0.08)";
+      ctx.strokeStyle = "#3b82f6";
+      ctx.lineWidth = 1 / viewport.zoom;
+      ctx.setLineDash([4 / viewport.zoom, 3 / viewport.zoom]);
+      ctx.beginPath();
+      ctx.rect(mx, my, mw, mh);
+      ctx.fill();
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
     // Resize handles (when selected and not resizing; only for non-connector, non-freehand elements)
     if (selectedId && !resizing) {
       const el = elements.find((e) => e.id === selectedId);
@@ -730,7 +791,7 @@ export function Canvas({
       ctx.restore();
     });
     if (perfMode) drawCountRef.current++;
-  }, [elements, viewport, selectedId, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, perfMode]);
+  }, [elements, viewport, selectedId, selectedIds, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, perfMode]);
 
   // FPS sampling when perf mode is on
   useEffect(() => {
@@ -796,12 +857,25 @@ export function Canvas({
 
       const hit = hitTest(sx, sy);
       if (hit) {
-        setSelectedId(hit.id);
+        if (e.shiftKey) {
+          setSelectedIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(hit.id)) next.delete(hit.id);
+            else next.add(hit.id);
+            return next;
+          });
+          setSelectedId(hit.id);
+        } else {
+          setSelectedId(hit.id);
+          setSelectedIds(new Set());
+        }
         setDragging({ id: hit.id, offsetX: world.x - hit.x, offsetY: world.y - hit.y });
       } else {
-        setSelectedId(null);
-        setPanning(true);
-        panStartRef.current = { x: e.clientX - viewport.x, y: e.clientY - viewport.y };
+        if (!e.shiftKey) {
+          setSelectedId(null);
+          setSelectedIds(new Set());
+        }
+        setMarquee({ startX: world.x, startY: world.y, currentX: world.x, currentY: world.y });
       }
     } else if (tool === "connector") {
       const hit = hitTest(sx, sy);
@@ -816,7 +890,7 @@ export function Canvas({
         setConnectorFromPoint(null);
         setConnectorPreview(null);
       }
-    } else if (tool === "rectangle" || tool === "circle") {
+    } else if (tool === "rectangle" || tool === "circle" || tool === "line") {
       setDrawDraft({ startX: world.x, startY: world.y, currentX: world.x, currentY: world.y });
     } else if (tool === "sticky_note" || tool === "text") {
       void onCreate(tool, world.x, world.y);
@@ -849,6 +923,9 @@ export function Canvas({
 
     if (drawDraft) {
       setDrawDraft((d) => (d ? { ...d, currentX: world.x, currentY: world.y } : null));
+    }
+    if (marquee) {
+      setMarquee((m) => (m ? { ...m, currentX: world.x, currentY: world.y } : null));
     }
     if (connectorFromId) {
       setConnectorPreview({ x: world.x, y: world.y });
@@ -935,16 +1012,42 @@ export function Canvas({
   }
 
   function handleMouseUp(e?: React.MouseEvent) {
+    if (marquee) {
+      const mx1 = Math.min(marquee.startX, marquee.currentX);
+      const my1 = Math.min(marquee.startY, marquee.currentY);
+      const mx2 = Math.max(marquee.startX, marquee.currentX);
+      const my2 = Math.max(marquee.startY, marquee.currentY);
+      if (mx2 - mx1 > 5 || my2 - my1 > 5) {
+        const hit = elements.filter(
+          (el) => el.type !== "connector" && el.type !== "freehand" && el.x < mx2 && el.x + el.width > mx1 && el.y < my2 && el.y + el.height > my1
+        );
+        if (hit.length > 0) {
+          setSelectedIds(new Set(hit.map((el) => el.id)));
+          setSelectedId(hit[0].id);
+        }
+      } else if (!e?.shiftKey) {
+        setPanning(false);
+      }
+      setMarquee(null);
+    }
     if (strokePoints.length >= 2 && onCreateFreehand) {
       void onCreateFreehand([...strokePoints]);
       setStrokePoints([]);
     }
-    if (drawDraft && (tool === "rectangle" || tool === "circle")) {
-      const x = Math.min(drawDraft.startX, drawDraft.currentX);
-      const y = Math.min(drawDraft.startY, drawDraft.currentY);
-      const w = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentX - drawDraft.startX));
-      const h = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentY - drawDraft.startY));
-      void onCreate(tool, x, y, w, h);
+    if (drawDraft && (tool === "rectangle" || tool === "circle" || tool === "line")) {
+      if (tool === "line") {
+        const dx = drawDraft.currentX - drawDraft.startX;
+        const dy = drawDraft.currentY - drawDraft.startY;
+        if (Math.abs(dx) + Math.abs(dy) > MIN_DRAW_SIZE) {
+          void onCreate("line", drawDraft.startX, drawDraft.startY, dx, dy);
+        }
+      } else {
+        const x = Math.min(drawDraft.startX, drawDraft.currentX);
+        const y = Math.min(drawDraft.startY, drawDraft.currentY);
+        const w = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentX - drawDraft.startX));
+        const h = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentY - drawDraft.startY));
+        void onCreate(tool, x, y, w, h);
+      }
       onToolChange("select");
       setDrawDraft(null);
     }
@@ -1052,13 +1155,18 @@ export function Canvas({
   function handleKeyDown(e: React.KeyboardEvent) {
     if (editingId) return;
     if (e.key === "Delete" || e.key === "Backspace") {
-      if (canDeleteSelected) {
+      if (selectedIds.size > 0) {
+        selectedIds.forEach((id) => onDelete(id));
+        setSelectedIds(new Set());
+        setSelectedId(null);
+      } else if (canDeleteSelected) {
         onDelete(selectedId!);
         setSelectedId(null);
       }
     }
     if (e.key === "Escape") {
       setSelectedId(null);
+      setSelectedIds(new Set());
       setEditingId(null);
       setFormatPanelOpen(false);
     }
@@ -1067,12 +1175,32 @@ export function Canvas({
       void onDuplicate(selectedId);
       return;
     }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
+      const ids = selectedIds.size > 0 ? selectedIds : (selectedId ? new Set([selectedId]) : new Set<string>());
+      if (ids.size > 0) {
+        clipboardRef.current = elements.filter((el) => ids.has(el.id) && el.type !== "connector");
+      }
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") {
+      if (clipboardRef.current.length > 0 && onCreate) {
+        const offset = 30;
+        for (const el of clipboardRef.current) {
+          void onCreate(
+            el.type as "sticky_note" | "rectangle" | "circle" | "text" | "frame" | "line",
+            el.x + offset, el.y + offset, el.width, el.height
+          );
+        }
+      }
+      return;
+    }
     const key = e.key.toLowerCase();
     if (!e.metaKey && !e.ctrlKey && !e.altKey) {
       if (key === "v") onToolChange("select");
       else if (key === "n") onToolChange("sticky_note");
       else if (key === "r") onToolChange("rectangle");
       else if (key === "o") onToolChange("circle");
+      else if (key === "l") onToolChange("line");
       else if (key === "t") onToolChange("text");
       else if (key === "a") onToolChange("connector");
     }

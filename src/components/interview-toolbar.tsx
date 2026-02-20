@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 
-export type InterviewTool = "select" | "sticky_note" | "pen" | "eraser" | "text" | "rectangle" | "circle" | "connector";
+export type InterviewTool = "select" | "sticky_note" | "pen" | "eraser" | "text" | "rectangle" | "circle" | "line" | "connector";
 
 interface InterviewToolbarProps {
   tool?: InterviewTool;

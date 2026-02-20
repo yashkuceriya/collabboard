@@ -101,7 +101,7 @@ export function ChatPanel({ boardId, user, accessToken, onClose, interviewMode }
           </div>
           <div>
             <h3 className="font-semibold text-sm text-gray-900 dark:text-gray-100">AI Assistant</h3>
-            <p className="text-[10px] text-gray-400 dark:text-gray-500">Powered by GPT-4o</p>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500">Powered by GPT-4o-mini</p>
           </div>
         </div>
         <button
@@ -120,7 +120,11 @@ export function ChatPanel({ boardId, user, accessToken, onClose, interviewMode }
           <div className="space-y-3">
             <div className="text-center py-4">
               <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">How can I help?</p>
-              <p className="text-xs text-gray-400 dark:text-gray-500">I can brainstorm ideas, add elements, organize your board, and more.</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                {interviewMode
+                  ? "I can help with system design, coding practice, complexity analysis, and interview tips. Ask for components, edge cases, or a quick review."
+                  : "I can brainstorm ideas, add elements, organize your board, and more."}
+              </p>
             </div>
             <div className="space-y-1.5">
               {suggestions.map((s) => (

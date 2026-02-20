@@ -1,6 +1,6 @@
 "use client";
 
-export type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "text" | "connector" | "pen" | "eraser";
+export type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "line" | "text" | "connector" | "pen" | "eraser";
 
 interface ToolbarProps {
   tool: ToolId;
@@ -46,6 +46,13 @@ function IconText() {
     </svg>
   );
 }
+function IconLine() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 13L13 3" />
+    </svg>
+  );
+}
 function IconConnector() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -60,6 +67,7 @@ const tools: { id: ToolId; label: string; shortcut: string; tooltip: string; Ico
   { id: "sticky_note", label: "Sticky Note", shortcut: "N", tooltip: "Add a sticky note", Icon: IconStickyNote },
   { id: "rectangle", label: "Rectangle", shortcut: "R", tooltip: "Draw a rectangle", Icon: IconRectangle },
   { id: "circle", label: "Circle", shortcut: "O", tooltip: "Draw a circle", Icon: IconCircle },
+  { id: "line", label: "Line", shortcut: "L", tooltip: "Draw a line", Icon: IconLine },
   { id: "text", label: "Text", shortcut: "T", tooltip: "Add text", Icon: IconText },
   { id: "connector", label: "Connect", shortcut: "A", tooltip: "Click two shapes to connect them with an arrow", Icon: IconConnector },
 ];

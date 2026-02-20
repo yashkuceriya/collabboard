@@ -53,7 +53,7 @@ export interface Database {
         Row: {
           id: string;
           board_id: string;
-          type: "sticky_note" | "rectangle" | "circle" | "text" | "frame" | "connector" | "freehand";
+          type: "sticky_note" | "rectangle" | "circle" | "text" | "frame" | "line" | "connector" | "freehand";
           x: number;
           y: number;
           width: number;
@@ -68,7 +68,7 @@ export interface Database {
         Insert: {
           id?: string;
           board_id: string;
-          type: "sticky_note" | "rectangle" | "circle" | "text" | "frame" | "connector" | "freehand";
+          type: "sticky_note" | "rectangle" | "circle" | "text" | "frame" | "line" | "connector" | "freehand";
           x: number;
           y: number;
           width?: number;
@@ -83,7 +83,7 @@ export interface Database {
         Update: {
           id?: string;
           board_id?: string;
-          type?: "sticky_note" | "rectangle" | "circle" | "text" | "frame" | "connector";
+          type?: "sticky_note" | "rectangle" | "circle" | "text" | "frame" | "line" | "connector";
           x?: number;
           y?: number;
           width?: number;

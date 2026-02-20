@@ -28,7 +28,7 @@ export default function BoardPage() {
   const [showChatPanel, setShowChatPanel] = useState(false);
   const [elements, setElements] = useState<BoardElement[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tool, setTool] = useState<"select" | "sticky_note" | "rectangle" | "circle" | "text" | "connector" | "pen" | "eraser">("select");
+  const [tool, setTool] = useState<"select" | "sticky_note" | "rectangle" | "circle" | "line" | "text" | "connector" | "pen" | "eraser">("select");
   const [openEditorForId, setOpenEditorForId] = useState<string | null>(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
   const [boardName, setBoardName] = useState("Untitled Board");
@@ -109,23 +109,20 @@ export default function BoardPage() {
   // Create element. For rectangle/circle, (x,y,width,height) can be passed (draw-by-drag). Otherwise click creates default size.
   const createElement = useCallback(
     async (
-      type: "sticky_note" | "rectangle" | "circle" | "text",
+      type: "sticky_note" | "rectangle" | "circle" | "text" | "frame" | "line",
       x: number,
       y: number,
       width?: number,
       height?: number
     ): Promise<string | null> => {
       if (!user) return null;
-      const color =
-        type === "sticky_note"
-          ? "#FFEB3B"
-          : type === "rectangle"
-            ? "#42A5F5"
-            : type === "circle"
-              ? "#10B981"
-              : "#3B82F6";
-      const w = width ?? (type === "sticky_note" ? 200 : type === "text" ? 180 : 120);
-      const h = height ?? (type === "sticky_note" ? 200 : type === "text" ? 40 : type === "circle" ? 120 : 100);
+      const colorMap: Record<string, string> = {
+        sticky_note: "#FFEB3B", rectangle: "#42A5F5", circle: "#10B981",
+        text: "#3B82F6", frame: "#6366F1", line: "#64748b",
+      };
+      const color = colorMap[type] ?? "#3B82F6";
+      const w = width ?? (type === "sticky_note" ? 200 : type === "text" ? 180 : type === "frame" ? 400 : type === "line" ? 200 : 120);
+      const h = height ?? (type === "sticky_note" ? 200 : type === "text" ? 40 : type === "circle" ? 120 : type === "frame" ? 300 : type === "line" ? 0 : 100);
       const now = new Date().toISOString();
       const tempId = `temp-${Date.now()}`;
       const elX = width != null ? x : x - w / 2;
@@ -141,7 +138,7 @@ export default function BoardPage() {
         height: h,
         color,
         text: type === "sticky_note" ? "New note" : "",
-        properties: type === "sticky_note" ? { rotation: (Math.random() - 0.5) * 6 } : {},
+        properties: type === "sticky_note" ? { rotation: (Math.random() - 0.5) * 6 } : type === "line" ? { x2: w, y2: h } : {},
         created_by: user.id,
         updated_at: now,
         created_at: now,
