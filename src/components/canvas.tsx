@@ -311,6 +311,8 @@ export function Canvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRectRef = useRef<DOMRect | null>(null);
+  const pendingViewportRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
+  const wheelRafRef = useRef<number | null>(null);
   // FPS state updated by the continuous rAF loop
   const [fps, setFps] = useState(0);
   const { effective: themeMode } = useTheme();
@@ -499,6 +501,8 @@ export function Canvas({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    const effectiveViewport = pendingViewportRef.current ?? viewport;
+
     const dpr = window.devicePixelRatio || 1;
     if (!canvasRectRef.current) canvasRectRef.current = canvas.getBoundingClientRect();
     const rect = canvasRectRef.current;
@@ -517,39 +521,48 @@ export function Canvas({
 
     // Draw grid
     ctx.save();
-    ctx.translate(viewport.x, viewport.y);
-    ctx.scale(viewport.zoom, viewport.zoom);
+    ctx.translate(effectiveViewport.x, effectiveViewport.y);
+    ctx.scale(effectiveViewport.zoom, effectiveViewport.zoom);
 
-    const gridSize = 40;
-    const startX = Math.floor(-viewport.x / viewport.zoom / gridSize) * gridSize - gridSize;
-    const startY = Math.floor(-viewport.y / viewport.zoom / gridSize) * gridSize - gridSize;
-    const endX = startX + (rect.width / viewport.zoom) + gridSize * 2;
-    const endY = startY + (rect.height / viewport.zoom) + gridSize * 2;
+    // Adaptive grid: coarser when zoomed out so we draw fewer dots (Figma/Miro smoothness)
+    const gridSize = effectiveViewport.zoom < 0.25 ? 160 : effectiveViewport.zoom < 0.5 ? 80 : 40;
+    const startX = Math.floor(-effectiveViewport.x / effectiveViewport.zoom / gridSize) * gridSize - gridSize;
+    const startY = Math.floor(-effectiveViewport.y / effectiveViewport.zoom / gridSize) * gridSize - gridSize;
+    const endX = startX + (rect.width / effectiveViewport.zoom) + gridSize * 2;
+    const endY = startY + (rect.height / effectiveViewport.zoom) + gridSize * 2;
+    const maxGridDots = 2500;
+    const gridCols = Math.min(Math.ceil((endX - startX) / gridSize), Math.ceil(Math.sqrt(maxGridDots)));
+    const gridRows = Math.min(Math.ceil((endY - startY) / gridSize), Math.ceil(maxGridDots / gridCols));
 
-    // Grid dots — fade at extreme zoom levels like Miro
-    if (viewport.zoom > 0.15) {
-      const gridAlpha = viewport.zoom < 0.3 ? (viewport.zoom - 0.15) / 0.15
-        : viewport.zoom > 4 ? Math.max(0, (5 - viewport.zoom))
+    if (effectiveViewport.zoom > 0.15 && gridCols > 0 && gridRows > 0) {
+      const gridAlpha = effectiveViewport.zoom < 0.3 ? (effectiveViewport.zoom - 0.15) / 0.15
+        : effectiveViewport.zoom > 4 ? Math.max(0, (5 - effectiveViewport.zoom))
         : 1;
       ctx.globalAlpha = gridAlpha;
       ctx.fillStyle = isDark ? "rgba(55,65,81,0.7)" : "rgba(0,0,0,0.08)";
-      const dotSize = (isDark ? 2 : 1.5) / viewport.zoom;
+      const dotSize = (isDark ? 2 : 1.5) / effectiveViewport.zoom;
       const half = dotSize / 2;
-      for (let gx = startX; gx < endX; gx += gridSize) {
-        for (let gy = startY; gy < endY; gy += gridSize) {
-          ctx.fillRect(gx - half, gy - half, dotSize, dotSize);
+      for (let gy = 0; gy < gridRows; gy++) {
+        for (let gx = 0; gx < gridCols; gx++) {
+          const wx = startX + gx * gridSize;
+          const wy = startY + gy * gridSize;
+          ctx.fillRect(wx - half, wy - half, dotSize, dotSize);
         }
       }
       ctx.globalAlpha = 1;
     }
 
     // Viewport culling: only draw elements that intersect the visible area (helps 500+ objects)
-    const vw = rect.width / viewport.zoom;
-    const vh = rect.height / viewport.zoom;
-    const vx = -viewport.x / viewport.zoom;
-    const vy = -viewport.y / viewport.zoom;
+    const vw = rect.width / effectiveViewport.zoom;
+    const vh = rect.height / effectiveViewport.zoom;
+    const vx = -effectiveViewport.x / effectiveViewport.zoom;
+    const vy = -effectiveViewport.y / effectiveViewport.zoom;
     const inView = (ex: number, ey: number, ew: number, eh: number) =>
       ex + ew >= vx && ex <= vx + vw && ey + eh >= vy && ey <= vy + vh;
+
+    // Level-of-detail: when zoomed out, draw simple rects only (Figma/Miro-style smooth zoom)
+    const LOD_ZOOM = 0.4;
+    const useLOD = effectiveViewport.zoom < LOD_ZOOM;
 
     // Draw frames first (behind other elements), then non-frames, then connectors
     let visibleDrawn = 0;
@@ -574,7 +587,37 @@ export function Canvas({
         ctx.translate(-cx, -cy);
       }
 
-      if (el.type === "sticky_note") {
+      // LOD: zoomed out — draw only colored rect (no text, shadows, or detail)
+      if (useLOD) {
+        if (el.type === "freehand") {
+          const pts = (el.properties as { points?: { x: number; y: number }[] })?.points;
+          if (pts && pts.length >= 2) {
+            ctx.strokeStyle = el.color;
+            ctx.lineWidth = Math.max(2 / effectiveViewport.zoom, 2);
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (let i = 1; i < pts.length; i += Math.max(1, Math.floor(pts.length / 50))) ctx.lineTo(pts[i].x, pts[i].y);
+            if (pts.length > 1) ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+            ctx.stroke();
+          }
+        } else {
+          const color = el.color ?? "#6366F1";
+          ctx.fillStyle = el.type === "frame" ? color + "18" : el.type === "sticky_note" ? color : color + "22";
+          const r = el.type === "sticky_note" ? 8 : el.type === "frame" ? 10 : 6;
+          if (el.type === "circle") {
+            const cx = x + width / 2, cy = y + height / 2, rx = width / 2, ry = height / 2;
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+            ctx.fill();
+          } else {
+            ctx.beginPath();
+            ctx.roundRect(x, y, width, height, r);
+            ctx.fill();
+          }
+        }
+      } else if (el.type === "sticky_note") {
         ctx.shadowColor = isDark ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.10)";
         ctx.shadowBlur = 16;
         ctx.shadowOffsetX = 1;
@@ -585,7 +628,7 @@ export function Canvas({
         ctx.fill();
         ctx.shadowColor = "transparent";
         ctx.strokeStyle = isDark ? "rgba(0,0,0,0.15)" : "rgba(0,0,0,0.06)";
-        ctx.lineWidth = 1 / viewport.zoom;
+        ctx.lineWidth = 1 / effectiveViewport.zoom;
         ctx.beginPath();
         ctx.roundRect(x, y, width, height, 8);
         ctx.stroke();
@@ -606,7 +649,7 @@ export function Canvas({
       } else if (el.type === "rectangle") {
         ctx.fillStyle = el.color + "22";
         ctx.strokeStyle = el.color;
-        ctx.lineWidth = 2 / viewport.zoom;
+        ctx.lineWidth = 2 / effectiveViewport.zoom;
         ctx.beginPath();
         ctx.roundRect(x, y, width, height, 6);
         ctx.fill();
@@ -633,7 +676,7 @@ export function Canvas({
         const ry = height / 2;
         ctx.fillStyle = el.color + "22";
         ctx.strokeStyle = el.color;
-        ctx.lineWidth = 2 / viewport.zoom;
+        ctx.lineWidth = 2 / effectiveViewport.zoom;
         ctx.beginPath();
         ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
         ctx.fill();
@@ -653,7 +696,7 @@ export function Canvas({
       } else if (el.type === "text") {
         ctx.fillStyle = el.color + "22";
         ctx.strokeStyle = el.color;
-        ctx.lineWidth = 1.5 / viewport.zoom;
+        ctx.lineWidth = 1.5 / effectiveViewport.zoom;
         const r = 6;
         ctx.beginPath();
         ctx.roundRect(x, y, width, height, r);
@@ -677,7 +720,7 @@ export function Canvas({
         const x2 = x + (props?.x2 ?? width);
         const y2 = y + (props?.y2 ?? height);
         ctx.strokeStyle = el.color;
-        ctx.lineWidth = 2.5 / viewport.zoom;
+        ctx.lineWidth = 2.5 / effectiveViewport.zoom;
         ctx.lineCap = "round";
         ctx.beginPath();
         ctx.moveTo(x, y);
@@ -689,14 +732,14 @@ export function Canvas({
         ctx.roundRect(x, y, width, height, 10);
         ctx.fill();
         ctx.strokeStyle = el.color;
-        ctx.lineWidth = 2 / viewport.zoom;
-        ctx.setLineDash([8 / viewport.zoom, 4 / viewport.zoom]);
+        ctx.lineWidth = 2 / effectiveViewport.zoom;
+        ctx.setLineDash([8 / effectiveViewport.zoom, 4 / effectiveViewport.zoom]);
         ctx.beginPath();
         ctx.roundRect(x, y, width, height, 10);
         ctx.stroke();
         ctx.setLineDash([]);
         if (el.text) {
-          const labelSize = Math.max(12, 14 / viewport.zoom);
+          const labelSize = Math.max(12, 14 / effectiveViewport.zoom);
           ctx.fillStyle = isDark ? "#e5e7eb" : "#374151";
           ctx.font = `bold ${labelSize}px Inter, system-ui, sans-serif`;
           const labelBgW = ctx.measureText(el.text).width + 16;
@@ -711,7 +754,7 @@ export function Canvas({
         const pts = (el.properties as { points?: { x: number; y: number }[] })?.points;
         if (pts && pts.length >= 2) {
           ctx.strokeStyle = el.color;
-          ctx.lineWidth = Math.max(2 / viewport.zoom, 2);
+          ctx.lineWidth = Math.max(2 / effectiveViewport.zoom, 2);
           ctx.lineCap = "round";
           ctx.lineJoin = "round";
           ctx.beginPath();
@@ -727,10 +770,10 @@ export function Canvas({
 
       // Hover highlight — subtle blue outline (Miro-style)
       if (el.id === hoveredId && el.id !== selectedId && !selectedIds.has(el.id) && !isFrameChild) {
-        const hGap = 2 / viewport.zoom;
-        const hCornerR = 4 / viewport.zoom;
+        const hGap = 2 / effectiveViewport.zoom;
+        const hCornerR = 4 / effectiveViewport.zoom;
         ctx.strokeStyle = isDark ? "rgba(96,165,250,0.4)" : "rgba(59,130,246,0.35)";
-        ctx.lineWidth = 1.5 / viewport.zoom;
+        ctx.lineWidth = 1.5 / effectiveViewport.zoom;
         ctx.beginPath();
         ctx.roundRect(x - hGap, y - hGap, width + hGap * 2, height + hGap * 2, hCornerR);
         ctx.stroke();
@@ -738,11 +781,11 @@ export function Canvas({
 
       // Selection outline — single thin border (Miro/Figma-style, constant screen-space thickness)
       if (el.id === selectedId || selectedIds.has(el.id) || isFrameChild) {
-        const gap = 3 / viewport.zoom;
-        const cornerR = 4 / viewport.zoom;
+        const gap = 3 / effectiveViewport.zoom;
+        const cornerR = 4 / effectiveViewport.zoom;
         ctx.strokeStyle = isFrameChild ? "#818cf8" : (isDark ? "#60a5fa" : "#3b82f6");
-        ctx.lineWidth = 1.5 / viewport.zoom;
-        ctx.setLineDash(isFrameChild || (selectedIds.has(el.id) && el.id !== selectedId) ? [4 / viewport.zoom, 3 / viewport.zoom] : []);
+        ctx.lineWidth = 1.5 / effectiveViewport.zoom;
+        ctx.setLineDash(isFrameChild || (selectedIds.has(el.id) && el.id !== selectedId) ? [4 / effectiveViewport.zoom, 3 / effectiveViewport.zoom] : []);
         ctx.beginPath();
         ctx.roundRect(x - gap, y - gap, width + gap * 2, height + gap * 2, cornerR);
         ctx.stroke();
@@ -754,7 +797,7 @@ export function Canvas({
 
     // Draw connectors (arrows) — cull if line bbox is out of view
     const strokeColor = isDark ? "#94a3b8" : "#64748b";
-    const arrowLen = 14 / viewport.zoom;
+    const arrowLen = 14 / effectiveViewport.zoom;
     for (const el of elements) {
       if (el.type !== "connector") continue;
       const pts = getConnectorEndpoints(el, idToElement);
@@ -767,11 +810,11 @@ export function Canvas({
       ctx.save();
       const connColor = el.color && el.color !== "#64748b" ? el.color : (el.id === selectedId ? "#3b82f6" : strokeColor);
       ctx.strokeStyle = el.id === selectedId ? "#3b82f6" : connColor;
-      ctx.lineWidth = (el.id === selectedId ? 2.5 : 2) / viewport.zoom;
+      ctx.lineWidth = (el.id === selectedId ? 2.5 : 2) / effectiveViewport.zoom;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       const connStyle = (el.properties as { style?: string })?.style;
-      if (connStyle === "dashed") ctx.setLineDash([8 / viewport.zoom, 4 / viewport.zoom]);
+      if (connStyle === "dashed") ctx.setLineDash([8 / effectiveViewport.zoom, 4 / effectiveViewport.zoom]);
       ctx.beginPath();
       ctx.moveTo(pts.x1, pts.y1);
       ctx.lineTo(pts.x2, pts.y2);
@@ -791,8 +834,8 @@ export function Canvas({
     // Draw-by-drag preview (rectangle / circle / line)
     if (drawDraft && (tool === "rectangle" || tool === "circle" || tool === "line" || tool === "frame")) {
       ctx.save();
-      ctx.lineWidth = 2 / viewport.zoom;
-      ctx.setLineDash([6 / viewport.zoom, 4 / viewport.zoom]);
+      ctx.lineWidth = 2 / effectiveViewport.zoom;
+      ctx.setLineDash([6 / effectiveViewport.zoom, 4 / effectiveViewport.zoom]);
       if (tool === "line") {
         ctx.strokeStyle = "#64748b";
         ctx.lineCap = "round";
@@ -807,11 +850,11 @@ export function Canvas({
         const h = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentY - drawDraft.startY));
         if (tool === "frame") {
           ctx.strokeStyle = "#6366F1";
-          ctx.setLineDash([8 / viewport.zoom, 4 / viewport.zoom]);
+          ctx.setLineDash([8 / effectiveViewport.zoom, 4 / effectiveViewport.zoom]);
           ctx.beginPath();
           ctx.roundRect(x, y, w, h, 10);
           ctx.stroke();
-          ctx.setLineDash([6 / viewport.zoom, 4 / viewport.zoom]);
+          ctx.setLineDash([6 / effectiveViewport.zoom, 4 / effectiveViewport.zoom]);
         } else {
           ctx.strokeStyle = tool === "rectangle" ? "#42A5F5" : "#10B981";
           if (tool === "rectangle") {
@@ -832,8 +875,8 @@ export function Canvas({
     if (connectorFromId && connectorFromPoint && connectorPreview) {
       ctx.save();
       ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = 2 / viewport.zoom;
-      ctx.setLineDash([6 / viewport.zoom, 4 / viewport.zoom]);
+      ctx.lineWidth = 2 / effectiveViewport.zoom;
+      ctx.setLineDash([6 / effectiveViewport.zoom, 4 / effectiveViewport.zoom]);
       ctx.beginPath();
       ctx.moveTo(connectorFromPoint.x, connectorFromPoint.y);
       ctx.lineTo(connectorPreview.x, connectorPreview.y);
@@ -860,9 +903,9 @@ export function Canvas({
       ctx.save();
       ctx.fillStyle = "#3b82f6";
       ctx.strokeStyle = isDark ? "#1f2937" : "#fff";
-      ctx.lineWidth = 2 / viewport.zoom;
+      ctx.lineWidth = 2 / effectiveViewport.zoom;
       ctx.beginPath();
-      ctx.arc(connectorFromPoint.x, connectorFromPoint.y, 5 / viewport.zoom, 0, Math.PI * 2);
+      ctx.arc(connectorFromPoint.x, connectorFromPoint.y, 5 / effectiveViewport.zoom, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
       ctx.restore();
@@ -881,10 +924,10 @@ export function Canvas({
         ctx.save();
         ctx.fillStyle = "#3b82f6";
         ctx.strokeStyle = isDark ? "#1f2937" : "#fff";
-        ctx.lineWidth = 2 / viewport.zoom;
+        ctx.lineWidth = 2 / effectiveViewport.zoom;
         for (const a of anchors) {
           ctx.beginPath();
-          ctx.arc(a.x, a.y, 5 / viewport.zoom, 0, Math.PI * 2);
+          ctx.arc(a.x, a.y, 5 / effectiveViewport.zoom, 0, Math.PI * 2);
           ctx.fill();
           ctx.stroke();
         }
@@ -896,7 +939,7 @@ export function Canvas({
     if (tool === "pen" && strokePoints.length >= 2) {
       ctx.save();
       ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = Math.max(2 / viewport.zoom, 2);
+      ctx.lineWidth = Math.max(2 / effectiveViewport.zoom, 2);
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       ctx.beginPath();
@@ -915,8 +958,8 @@ export function Canvas({
       ctx.save();
       ctx.fillStyle = "rgba(59,130,246,0.08)";
       ctx.strokeStyle = "#3b82f6";
-      ctx.lineWidth = 1 / viewport.zoom;
-      ctx.setLineDash([4 / viewport.zoom, 3 / viewport.zoom]);
+      ctx.lineWidth = 1 / effectiveViewport.zoom;
+      ctx.setLineDash([4 / effectiveViewport.zoom, 3 / effectiveViewport.zoom]);
       ctx.beginPath();
       ctx.rect(mx, my, mw, mh);
       ctx.fill();
@@ -930,15 +973,15 @@ export function Canvas({
       const el = elements.find((e) => e.id === selectedId);
       if (el && el.type !== "connector" && el.type !== "freehand") {
         const handles = getResizeHandles(el);
-        const hSize = HANDLE_SIZE_WORLD / viewport.zoom;
+        const hSize = HANDLE_SIZE_WORLD / effectiveViewport.zoom;
         const hHalf = hSize / 2;
-        const hRadius = 2 / viewport.zoom;
+        const hRadius = 2 / effectiveViewport.zoom;
         ctx.fillStyle = isDark ? "#1e293b" : "#fff";
         ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6";
-        ctx.lineWidth = 1.5 / viewport.zoom;
+        ctx.lineWidth = 1.5 / effectiveViewport.zoom;
         ctx.shadowColor = "rgba(0,0,0,0.15)";
-        ctx.shadowBlur = 3 / viewport.zoom;
-        ctx.shadowOffsetY = 1 / viewport.zoom;
+        ctx.shadowBlur = 3 / effectiveViewport.zoom;
+        ctx.shadowOffsetY = 1 / effectiveViewport.zoom;
         for (const { x: hx, y: hy } of handles) {
           ctx.beginPath();
           ctx.roundRect(hx - hHalf, hy - hHalf, hSize, hSize, hRadius);
@@ -1374,6 +1417,7 @@ export function Canvas({
     setIsErasing(false);
   }
 
+  // Throttle wheel to one viewport update per frame (Figma/Miro smoothness)
   const handleWheel = useCallback(
     (e: WheelEvent) => {
       e.preventDefault();
@@ -1382,22 +1426,27 @@ export function Canvas({
       const rect = canvasRectRef.current ?? canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
+      const base = pendingViewportRef.current ?? viewport;
       const isPinchZoom = e.ctrlKey || e.metaKey;
+      let next: { x: number; y: number; zoom: number };
       if (isPinchZoom) {
         const delta = e.deltaY > 0 ? 0.9 : 1.1;
-        const newZoom = Math.min(Math.max(viewport.zoom * delta, 0.1), 5);
-        const ratio = newZoom / viewport.zoom;
-        onViewportChange({
+        const newZoom = Math.min(Math.max(base.zoom * delta, 0.1), 5);
+        const ratio = newZoom / base.zoom;
+        next = {
           zoom: newZoom,
-          x: sx - (sx - viewport.x) * ratio,
-          y: sy - (sy - viewport.y) * ratio,
-        });
+          x: sx - (sx - base.x) * ratio,
+          y: sy - (sy - base.y) * ratio,
+        };
       } else {
-        // Two-finger swipe → pan
-        onViewportChange({
-          ...viewport,
-          x: viewport.x - e.deltaX,
-          y: viewport.y - e.deltaY,
+        next = { ...base, x: base.x - e.deltaX, y: base.y - e.deltaY };
+      }
+      pendingViewportRef.current = next;
+      if (wheelRafRef.current === null) {
+        wheelRafRef.current = requestAnimationFrame(() => {
+          const p = pendingViewportRef.current;
+          if (p) onViewportChange(p);
+          wheelRafRef.current = null;
         });
       }
     },
