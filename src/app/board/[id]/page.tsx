@@ -521,6 +521,69 @@ export default function BoardPage() {
     void clearBoard();
   }, [elements.length, clearBoard]);
 
+  // Stress test: bulk-generate N sticky notes for performance testing
+  const stressTest = useCallback(async (count: number) => {
+    if (!user) return;
+    const colors = ["#FFEB3B", "#FF9800", "#F48FB1", "#CE93D8", "#90CAF9", "#80CBC4", "#A5D6A7", "#E8F5E9"];
+    const facts = [
+      "The speed of light is 299,792,458 m/s",
+      "Honey never spoils",
+      "Octopuses have three hearts",
+      "A day on Venus is longer than a year",
+      "Bananas are berries but strawberries aren't",
+      "Water can boil and freeze at the same time",
+      "The Eiffel Tower grows 6 inches in summer",
+      "A group of flamingos is called a flamboyance",
+      "Humans share 60% of DNA with bananas",
+      "The moon has moonquakes",
+      "Sharks are older than trees",
+      "A jiffy is an actual unit of time",
+      "Wombat poop is cube-shaped",
+      "The inventor of Pringles is buried in a Pringles can",
+      "Hot water freezes faster than cold water",
+      "A cloud can weigh over a million pounds",
+      "There are more stars than grains of sand",
+      "Cows have best friends",
+      "Sea otters hold hands while sleeping",
+      "The human nose can detect over 1 trillion scents",
+    ];
+    const cols = Math.ceil(Math.sqrt(count));
+    const gap = 20;
+    const cellW = 210;
+    const cellH = 210;
+    const batchSize = 50;
+    const batches: Array<Record<string, unknown>>[] = [];
+    let batch: Record<string, unknown>[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const bg = colors[i % colors.length];
+      batch.push({
+        board_id: boardId,
+        type: "sticky_note",
+        x: 50 + col * (cellW + gap),
+        y: 50 + row * (cellH + gap),
+        width: cellW,
+        height: cellH,
+        color: bg,
+        text: `#${i + 1}: ${facts[i % facts.length]}`,
+        properties: { textColor: "#1a1a1a", textAlign: "left" },
+        created_by: user.id,
+      });
+      if (batch.length >= batchSize) {
+        batches.push(batch);
+        batch = [];
+      }
+    }
+    if (batch.length) batches.push(batch);
+
+    for (const b of batches) {
+      await supabase.from("board_elements").insert(b as never);
+    }
+    await refreshElements();
+  }, [user, boardId, refreshElements]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
@@ -714,6 +777,8 @@ export default function BoardPage() {
         onInsertCodeBlock={interviewMode ? () => { void insertCodeBlock(); } : undefined}
         cursorLatencyRef={cursorLatencyRef}
         syncLatencyRef={syncLatencyRef}
+        onStressTest={perfMode ? stressTest : undefined}
+        onClearBoard={perfMode ? clearBoardWithConfirm : undefined}
       />
     </div>
   );

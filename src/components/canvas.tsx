@@ -41,6 +41,10 @@ interface CanvasProps {
   cursorLatencyRef?: React.RefObject<number | null>;
   /** Ref for object sync latency (ms) — from useRealtimeElements */
   syncLatencyRef?: React.RefObject<number | null>;
+  /** Bulk-generate N objects for stress testing (perf panel) */
+  onStressTest?: (count: number) => Promise<void>;
+  /** Clear all objects (perf panel) */
+  onClearBoard?: () => void;
 }
 
 // Color name labels for cursors
@@ -303,6 +307,8 @@ export function Canvas({
   onInsertCodeBlock,
   cursorLatencyRef,
   syncLatencyRef,
+  onStressTest,
+  onClearBoard,
 }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1488,15 +1494,19 @@ export function Canvas({
     <div ref={containerRef} className="flex-1 relative" tabIndex={0} onKeyDown={handleKeyDown}>
       {/* Performance panel (add ?perf=1 to board URL) */}
       {perfMode && (
-        <PerfPanel metrics={{
-          fps,
-          elementCount: elements.length,
-          visibleCount: visibleCountRef.current,
-          peerCount: peers.length,
-          cursorLatency: cursorLatencyRef?.current ?? null,
-          syncLatency: syncLatencyRef?.current ?? null,
-          spatialIndexActive: spatialIndex !== null,
-        }} />
+        <PerfPanel
+          metrics={{
+            fps,
+            elementCount: elements.length,
+            visibleCount: visibleCountRef.current,
+            peerCount: peers.length,
+            cursorLatency: cursorLatencyRef?.current ?? null,
+            syncLatency: syncLatencyRef?.current ?? null,
+            spatialIndexActive: spatialIndex !== null,
+          }}
+          onStressTest={onStressTest}
+          onClearBoard={onClearBoard}
+        />
       )}
       {/* Connector tool hint — makes it clear arrows connect shapes */}
       {tool === "connector" && (
