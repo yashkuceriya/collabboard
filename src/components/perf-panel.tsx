@@ -12,6 +12,12 @@ export interface PerfMetrics {
   spatialIndexActive: boolean;
 }
 
+export interface PerfPanelProps {
+  metrics: PerfMetrics;
+  onStressTest?: (count: number) => void;
+  onClearBoard?: () => void;
+}
+
 const HISTORY_LEN = 60;
 
 function color(val: number, green: number, yellow: number): string {
@@ -26,8 +32,9 @@ function fpsColor(val: number): string {
   return "text-red-400";
 }
 
-export function PerfPanel({ metrics }: { metrics: PerfMetrics }) {
+export function PerfPanel({ metrics, onStressTest, onClearBoard }: PerfPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [stressLoading, setStressLoading] = useState(false);
   const fpsHistory = useRef<number[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -139,6 +146,42 @@ export function PerfPanel({ metrics }: { metrics: PerfMetrics }) {
           </div>
         )}
       </div>
+
+      {/* Stress test controls */}
+      {onStressTest && (
+        <div className="px-3 py-2 border-t border-gray-700/50 space-y-1.5">
+          <span className="text-[10px] text-gray-500 uppercase tracking-wider">Stress Test</span>
+          <div className="flex gap-1">
+            {[50, 200, 500].map((n) => (
+              <button
+                key={n}
+                type="button"
+                disabled={stressLoading}
+                onClick={async () => {
+                  setStressLoading(true);
+                  try { await onStressTest(n); } finally { setStressLoading(false); }
+                }}
+                className="flex-1 px-1 py-1 text-[10px] rounded bg-gray-700/60 hover:bg-gray-600/60 text-gray-300 transition-colors disabled:opacity-40"
+              >
+                +{n}
+              </button>
+            ))}
+          </div>
+          {onClearBoard && (
+            <button
+              type="button"
+              disabled={stressLoading}
+              onClick={onClearBoard}
+              className="w-full px-1 py-1 text-[10px] rounded bg-red-900/40 hover:bg-red-800/50 text-red-300 transition-colors disabled:opacity-40"
+            >
+              Clear all
+            </button>
+          )}
+          {stressLoading && (
+            <p className="text-[10px] text-yellow-400 animate-pulse">Generating...</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

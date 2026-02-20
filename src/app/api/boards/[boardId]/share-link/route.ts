@@ -4,7 +4,8 @@ import type { Database } from "@/lib/types/database";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const _supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+void _supabaseServiceKey; // reserved for future admin use
 
 export async function POST(
   req: Request,

@@ -56,6 +56,7 @@ function CallbackContent() {
       return;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- show error UI for invalid link
     setMessage("Invalid or missing confirmation link.");
     setTimeout(() => router.replace("/auth"), 3000);
   }, [router, searchParams]);

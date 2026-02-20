@@ -75,8 +75,9 @@ export async function POST(req: Request) {
   // Helper: compute a position (x,y) that does not overlap existing non-connector elements.
   async function computeSuggestedPlacement(
     width: number = 200,
-    height: number = 200
+    _height: number = 200
   ): Promise<{ x: number; y: number }> {
+    void _height;
     const { data } = await supabase
       .from("board_elements")
       .select("x, y, width, height")

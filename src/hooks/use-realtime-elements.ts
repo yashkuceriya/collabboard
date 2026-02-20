@@ -99,7 +99,8 @@ export function useRealtimeElements(boardId: string, setElements: SetElements) {
           if (typeof raw._ts === "number") {
             syncLatencyRef.current = Date.now() - raw._ts;
           }
-          const { _ts: _, ...rest } = raw;
+          const { _ts: _omit, ...rest } = raw;
+          void _omit;
           addToState(normalizeRow(rest));
         }
       })
@@ -111,7 +112,8 @@ export function useRealtimeElements(boardId: string, setElements: SetElements) {
           if (typeof raw._ts === "number") {
             syncLatencyRef.current = Date.now() - raw._ts;
           }
-          const { _ts: __, ...rest } = raw;
+          const { _ts: _omitTs, ...rest } = raw;
+          void _omitTs;
           const updated = normalizeRow(rest);
           setElementsRef.current((prev) =>
             sortElementsByOrder(prev.map((e) => (e.id === updated.id ? { ...e, ...updated } : e)))

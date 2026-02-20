@@ -41,6 +41,10 @@ interface CanvasProps {
   cursorLatencyRef?: React.RefObject<number | null>;
   /** Ref for object sync latency (ms) — from useRealtimeElements */
   syncLatencyRef?: React.RefObject<number | null>;
+  /** Bulk-generate N objects for stress testing (perf panel) */
+  onStressTest?: (count: number) => Promise<void>;
+  /** Clear all objects (perf panel) */
+  onClearBoard?: () => void;
 }
 
 // Color name labels for cursors
@@ -50,7 +54,7 @@ const CURSOR_COLORS = [
 ];
 
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-const HANDLE_SIZE_WORLD = 6;
+const HANDLE_SIZE_WORLD = 8;
 /** Hit area for handles (larger than visual for easier grabbing) */
 const HANDLE_HIT_SLOP = 8;
 const MIN_SIZE = 24;
@@ -254,6 +258,24 @@ function buildCanvasFont(el: BoardElement): string {
   return `${style} ${weight} ${size.canvas}px ${family.canvas}`;
 }
 
+// Text wrapping cache — avoids expensive measureText calls on every frame
+// Cache is keyed by "font|maxWidth|text" and cleared when elements change
+const wrapTextCache = new Map<string, string[]>();
+
+function wrapTextCached(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, font: string): string[] {
+  const key = `${font}|${Math.round(maxWidth)}|${text}`;
+  const cached = wrapTextCache.get(key);
+  if (cached) return cached;
+  ctx.font = font;
+  const result = wrapText(ctx, text, maxWidth);
+  wrapTextCache.set(key, result);
+  return result;
+}
+
+function invalidateWrapCache() {
+  wrapTextCache.clear();
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
 }
@@ -283,9 +305,12 @@ export function Canvas({
   onInsertCodeBlock,
   cursorLatencyRef,
   syncLatencyRef,
+  onStressTest,
+  onClearBoard,
 }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRectRef = useRef<DOMRect | null>(null);
   // FPS state updated by the continuous rAF loop
   const [fps, setFps] = useState(0);
   const { effective: themeMode } = useTheme();
@@ -331,7 +356,7 @@ export function Canvas({
     if (!openEditorForId || !onOpenEditorFulfilled) return;
     const el = elements.find((e) => e.id === openEditorForId);
     if (el) {
-      setEditingId(openEditorForId); // eslint-disable-line react-hooks/set-state-in-effect -- intentional prop→state sync
+      setEditingId(openEditorForId);
       setEditText(el.text ?? "");
       onOpenEditorFulfilled();
     }
@@ -407,11 +432,14 @@ export function Canvas({
 
   // Memoized sorted elements: frames first, then shapes, connectors skipped in draw loop
   const sortedElements = useMemo(
-    () => [...elements].sort((a, b) => {
-      if (a.type === "frame" && b.type !== "frame") return -1;
-      if (a.type !== "frame" && b.type === "frame") return 1;
-      return 0;
-    }),
+    () => {
+      invalidateWrapCache();
+      return [...elements].sort((a, b) => {
+        if (a.type === "frame" && b.type !== "frame") return -1;
+        if (a.type !== "frame" && b.type === "frame") return 1;
+        return 0;
+      });
+    },
     [elements]
   );
 
@@ -472,7 +500,8 @@ export function Canvas({
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
+    if (!canvasRectRef.current) canvasRectRef.current = canvas.getBoundingClientRect();
+    const rect = canvasRectRef.current;
     const newW = Math.round(rect.width * dpr);
     const newH = Math.round(rect.height * dpr);
     if (canvas.width !== newW || canvas.height !== newH) {
@@ -497,8 +526,13 @@ export function Canvas({
     const endX = startX + (rect.width / viewport.zoom) + gridSize * 2;
     const endY = startY + (rect.height / viewport.zoom) + gridSize * 2;
 
-    {
-      ctx.fillStyle = isDark ? "#374151" : "#d1d5db";
+    // Grid dots — fade at extreme zoom levels like Miro
+    if (viewport.zoom > 0.15) {
+      const gridAlpha = viewport.zoom < 0.3 ? (viewport.zoom - 0.15) / 0.15
+        : viewport.zoom > 4 ? Math.max(0, (5 - viewport.zoom))
+        : 1;
+      ctx.globalAlpha = gridAlpha;
+      ctx.fillStyle = isDark ? "rgba(55,65,81,0.7)" : "rgba(0,0,0,0.08)";
       const dotSize = (isDark ? 2 : 1.5) / viewport.zoom;
       const half = dotSize / 2;
       for (let gx = startX; gx < endX; gx += gridSize) {
@@ -506,6 +540,7 @@ export function Canvas({
           ctx.fillRect(gx - half, gy - half, dotSize, dotSize);
         }
       }
+      ctx.globalAlpha = 1;
     }
 
     // Viewport culling: only draw elements that intersect the visible area (helps 500+ objects)
@@ -557,8 +592,9 @@ export function Canvas({
 
         const stickyFont = getElementFontSize(el);
         ctx.fillStyle = getElementTextColor(el, isDark);
-        ctx.font = buildCanvasFont(el);
-        const lines = wrapText(ctx, el.text, width - 20);
+        const stickyCanvasFont = buildCanvasFont(el);
+        ctx.font = stickyCanvasFont;
+        const lines = wrapTextCached(ctx, el.text, width - 20, stickyCanvasFont);
         const stickyAlign = getElementTextAlign(el);
         const pad = 10;
         lines.forEach((line, i) => {
@@ -578,8 +614,9 @@ export function Canvas({
         if (el.text) {
           const rectFont = getElementFontSize(el);
           ctx.fillStyle = getElementTextColor(el, isDark);
-          ctx.font = buildCanvasFont(el);
-          const lines = wrapText(ctx, el.text, width - 14);
+          const rectCanvasFont = buildCanvasFont(el);
+          ctx.font = rectCanvasFont;
+          const lines = wrapTextCached(ctx, el.text, width - 14, rectCanvasFont);
           const rectAlign = getElementTextAlign(el);
           const rPad = 7;
           lines.forEach((line, i) => {
@@ -604,8 +641,9 @@ export function Canvas({
         if (el.text) {
           const circFont = getElementFontSize(el);
           ctx.fillStyle = getElementTextColor(el, isDark);
-          ctx.font = buildCanvasFont(el);
-          const lines = wrapText(ctx, el.text, width - 12);
+          const circCanvasFont = buildCanvasFont(el);
+          ctx.font = circCanvasFont;
+          const lines = wrapTextCached(ctx, el.text, width - 12, circCanvasFont);
           const startY = cy - (lines.length * circFont.lineHeight) / 2 + circFont.lineHeight / 2;
           lines.forEach((line, i) => {
             const tw = ctx.measureText(line).width;
@@ -623,8 +661,9 @@ export function Canvas({
         ctx.stroke();
         const textFont = getElementFontSize(el);
         ctx.fillStyle = getElementTextColor(el, isDark);
-        ctx.font = buildCanvasFont(el);
-        const lines = wrapText(ctx, el.text || "Type here…", width - 12);
+        const textCanvasFont = buildCanvasFont(el);
+        ctx.font = textCanvasFont;
+        const lines = wrapTextCached(ctx, el.text || "Type here…", width - 12, textCanvasFont);
         const textAlign = getElementTextAlign(el);
         const tPad = 6;
         lines.forEach((line, i) => {
@@ -686,12 +725,23 @@ export function Canvas({
       const elFrameId = (el.properties as { frameId?: string } | undefined)?.frameId;
       const isFrameChild = elFrameId && elFrameId === selectedId;
 
+      // Hover highlight — subtle blue outline (Miro-style)
+      if (el.id === hoveredId && el.id !== selectedId && !selectedIds.has(el.id) && !isFrameChild) {
+        const hGap = 2 / viewport.zoom;
+        const hCornerR = 4 / viewport.zoom;
+        ctx.strokeStyle = isDark ? "rgba(96,165,250,0.4)" : "rgba(59,130,246,0.35)";
+        ctx.lineWidth = 1.5 / viewport.zoom;
+        ctx.beginPath();
+        ctx.roundRect(x - hGap, y - hGap, width + hGap * 2, height + hGap * 2, hCornerR);
+        ctx.stroke();
+      }
+
       // Selection outline — single thin border (Miro/Figma-style, constant screen-space thickness)
       if (el.id === selectedId || selectedIds.has(el.id) || isFrameChild) {
-        const gap = 2 / viewport.zoom;
+        const gap = 3 / viewport.zoom;
         const cornerR = 4 / viewport.zoom;
         ctx.strokeStyle = isFrameChild ? "#818cf8" : (isDark ? "#60a5fa" : "#3b82f6");
-        ctx.lineWidth = 1 / viewport.zoom;
+        ctx.lineWidth = 1.5 / viewport.zoom;
         ctx.setLineDash(isFrameChild || (selectedIds.has(el.id) && el.id !== selectedId) ? [4 / viewport.zoom, 3 / viewport.zoom] : []);
         ctx.beginPath();
         ctx.roundRect(x - gap, y - gap, width + gap * 2, height + gap * 2, cornerR);
@@ -875,21 +925,29 @@ export function Canvas({
       ctx.restore();
     }
 
-    // Resize handles — small, constant screen-space size (Miro/Figma-style)
+    // Resize handles — rounded squares, constant screen-space (Miro-style)
     if (selectedId && !resizing) {
       const el = elements.find((e) => e.id === selectedId);
       if (el && el.type !== "connector" && el.type !== "freehand") {
         const handles = getResizeHandles(el);
-        const r = HANDLE_SIZE_WORLD / 2 / viewport.zoom;
+        const hSize = HANDLE_SIZE_WORLD / viewport.zoom;
+        const hHalf = hSize / 2;
+        const hRadius = 2 / viewport.zoom;
         ctx.fillStyle = isDark ? "#1e293b" : "#fff";
         ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6";
-        ctx.lineWidth = 1 / viewport.zoom;
+        ctx.lineWidth = 1.5 / viewport.zoom;
+        ctx.shadowColor = "rgba(0,0,0,0.15)";
+        ctx.shadowBlur = 3 / viewport.zoom;
+        ctx.shadowOffsetY = 1 / viewport.zoom;
         for (const { x: hx, y: hy } of handles) {
           ctx.beginPath();
-          ctx.arc(hx, hy, r, 0, Math.PI * 2);
+          ctx.roundRect(hx - hHalf, hy - hHalf, hSize, hSize, hRadius);
           ctx.fill();
           ctx.stroke();
         }
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
       }
     }
 
@@ -902,13 +960,18 @@ export function Canvas({
       const color = CURSOR_COLORS[i % CURSOR_COLORS.length];
 
       ctx.save();
-      // Cursor arrow
-      ctx.fillStyle = color;
+      // Cursor arrow — with white outline for visibility on any background
       ctx.beginPath();
       ctx.moveTo(screen.x, screen.y);
-      ctx.lineTo(screen.x + 2, screen.y + 16);
-      ctx.lineTo(screen.x + 8, screen.y + 12);
+      ctx.lineTo(screen.x, screen.y + 18);
+      ctx.lineTo(screen.x + 5, screen.y + 14);
+      ctx.lineTo(screen.x + 12, screen.y + 14);
       ctx.closePath();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 2;
+      ctx.lineJoin = "round";
+      ctx.stroke();
+      ctx.fillStyle = color;
       ctx.fill();
 
       // Name label
@@ -924,31 +987,28 @@ export function Canvas({
       ctx.restore();
     });
     visibleCountRef.current = visibleDrawn;
-  }, [elements, sortedElements, viewport, selectedId, selectedIds, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, perfMode, idToElement]);
+  }, [elements, sortedElements, viewport, selectedId, selectedIds, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, idToElement]);
+
+  // Sampled perf metrics for panel (avoid reading refs during render)
+  const [perfVisibleCount, setPerfVisibleCount] = useState(0);
+  const [perfCursorLatency, setPerfCursorLatency] = useState<number | null>(null);
+  const [perfSyncLatency, setPerfSyncLatency] = useState<number | null>(null);
+
+  const fpsRef = useRef(0);
+  const frameCountRef = useRef(0);
+  const drawRef = useRef(draw);
+  useEffect(() => {
+    drawRef.current = draw;
+  }, [draw]);
 
   // Continuous rAF render loop — runs at display refresh rate (60/120 Hz)
-  // like Miro/Figma for maximum responsiveness and accurate FPS measurement
-  const fpsRef = useRef(0);
-  const drawRef = useRef(draw);
-  drawRef.current = draw;
   useEffect(() => {
     let running = true;
-    let frameCount = 0;
-    let lastFpsTime = performance.now();
 
     function loop() {
       if (!running) return;
       drawRef.current();
-      frameCount++;
-
-      const now = performance.now();
-      if (now - lastFpsTime >= 1000) {
-        fpsRef.current = frameCount;
-        setFps(frameCount);
-        frameCount = 0;
-        lastFpsTime = now;
-      }
-
+      frameCountRef.current++;
       requestAnimationFrame(loop);
     }
 
@@ -956,11 +1016,29 @@ export function Canvas({
     return () => { running = false; };
   }, []);
 
-  // Resize observer — stable (uses ref so it never re-attaches)
+  // FPS + perf sampling on interval (no refs read during render)
+  useEffect(() => {
+    const id = setInterval(() => {
+      fpsRef.current = frameCountRef.current;
+      setFps(frameCountRef.current);
+      setPerfVisibleCount(visibleCountRef.current);
+      setPerfCursorLatency(cursorLatencyRef?.current ?? null);
+      setPerfSyncLatency(syncLatencyRef?.current ?? null);
+      frameCountRef.current = 0;
+    }, 1000);
+    return () => clearInterval(id);
+    // Refs are stable; no need in deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Resize observer — invalidates cached rect on container resize
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const ro = new ResizeObserver(() => requestAnimationFrame(() => drawRef.current()));
+    const ro = new ResizeObserver(() => {
+      const canvas = canvasRef.current;
+      if (canvas) canvasRectRef.current = canvas.getBoundingClientRect();
+    });
     ro.observe(container);
     return () => ro.disconnect();
   }, []);
@@ -968,7 +1046,7 @@ export function Canvas({
   // Mouse handlers
   function handleMouseDown(e: React.MouseEvent) {
     containerRef.current?.focus({ preventScroll: true });
-    const rect = canvasRef.current?.getBoundingClientRect();
+    const rect = canvasRectRef.current ?? canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
@@ -1047,7 +1125,7 @@ export function Canvas({
   }
 
   function handleMouseMove(e: React.MouseEvent) {
-    const rect = canvasRef.current?.getBoundingClientRect();
+    const rect = canvasRectRef.current ?? canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
@@ -1232,7 +1310,7 @@ export function Canvas({
     }
     if (connectorFromId) {
       if (canvasRef.current && e) {
-        const rect = canvasRef.current.getBoundingClientRect();
+        const rect = canvasRectRef.current ?? canvasRef.current.getBoundingClientRect();
         const sx2 = e.clientX - rect.left;
         const sy2 = e.clientY - rect.top;
         const hit = hitTest(sx2, sy2);
@@ -1265,7 +1343,8 @@ export function Canvas({
             if (inside && curFrame !== el.id) {
               onUpdate(child.id, { properties: { ...(child.properties as Record<string, Json>), frameId: el.id } as Json });
             } else if (!inside && curFrame === el.id) {
-              const { frameId: _, ...rest } = (child.properties as Record<string, Json>);
+              const rest = { ...(child.properties as Record<string, Json>) };
+              delete rest.frameId;
               onUpdate(child.id, { properties: rest as Json });
             }
           }
@@ -1283,7 +1362,8 @@ export function Canvas({
           if (assignedFrame && curFrame !== assignedFrame) {
             onUpdate(el.id, { properties: { ...(el.properties as Record<string, Json>), frameId: assignedFrame } as Json });
           } else if (!assignedFrame && curFrame) {
-            const { frameId: _, ...rest } = (el.properties as Record<string, Json>);
+            const rest = { ...(el.properties as Record<string, Json>) };
+            delete rest.frameId;
             onUpdate(el.id, { properties: rest as Json });
           }
         }
@@ -1299,7 +1379,7 @@ export function Canvas({
       e.preventDefault();
       const canvas = canvasRef.current;
       if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
+      const rect = canvasRectRef.current ?? canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
       const isPinchZoom = e.ctrlKey || e.metaKey;
@@ -1335,7 +1415,7 @@ export function Canvas({
   function handleDoubleClick(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    const rect = canvasRef.current?.getBoundingClientRect();
+    const rect = canvasRectRef.current ?? canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
@@ -1455,16 +1535,48 @@ export function Canvas({
     <div ref={containerRef} className="flex-1 relative" tabIndex={0} onKeyDown={handleKeyDown}>
       {/* Performance panel (add ?perf=1 to board URL) */}
       {perfMode && (
-        <PerfPanel metrics={{
-          fps,
-          elementCount: elements.length,
-          visibleCount: visibleCountRef.current,
-          peerCount: peers.length,
-          cursorLatency: cursorLatencyRef?.current ?? null,
-          syncLatency: syncLatencyRef?.current ?? null,
-          spatialIndexActive: spatialIndex !== null,
-        }} />
+        <PerfPanel
+          metrics={{
+            fps,
+            elementCount: elements.length,
+            visibleCount: perfVisibleCount,
+            peerCount: peers.length,
+            cursorLatency: perfCursorLatency,
+            syncLatency: perfSyncLatency,
+            spatialIndexActive: spatialIndex !== null,
+          }}
+          onStressTest={onStressTest}
+          onClearBoard={onClearBoard}
+        />
       )}
+      {/* Zoom controls — bottom right (Miro-style) */}
+      <div className="absolute bottom-20 right-4 z-20 flex items-center gap-0.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-xl border border-gray-200/50 dark:border-gray-800/50 shadow-lg px-1 py-1">
+        <button
+          type="button"
+          onClick={() => onViewportChange({ ...viewport, zoom: Math.max(0.1, Math.round((viewport.zoom - 0.1) * 10) / 10) })}
+          className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors active:scale-90"
+          title="Zoom out (Ctrl+-)"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <button
+          type="button"
+          onClick={() => onViewportChange({ zoom: 1, x: 0, y: 0 })}
+          className="text-[11px] font-medium text-gray-600 dark:text-gray-300 min-w-[3rem] text-center tabular-nums rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 py-1 transition-colors"
+          title="Reset to 100%"
+        >
+          {Math.round(viewport.zoom * 100)}%
+        </button>
+        <button
+          type="button"
+          onClick={() => onViewportChange({ ...viewport, zoom: Math.min(5, Math.round((viewport.zoom + 0.1) * 10) / 10) })}
+          className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors active:scale-90"
+          title="Zoom in (Ctrl+=)"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+      </div>
+
       {/* Connector tool hint — makes it clear arrows connect shapes */}
       {tool === "connector" && (
         <div className="absolute bottom-14 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-xl bg-gray-900/90 dark:bg-gray-100/90 text-white dark:text-gray-900 text-xs font-medium shadow-lg border border-gray-700/50 dark:border-gray-300/50">

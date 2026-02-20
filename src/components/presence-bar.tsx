@@ -73,7 +73,7 @@ export function PresenceBar({ peers, user }: PresenceBarProps) {
         aria-label={`${onlineCount} online. Click to see who's here.`}
       >
         <div className="flex items-center -space-x-1.5">
-          {onlineList.map((u) => (
+          {onlineList.slice(0, 4).map((u) => (
             <div
               key={u.id}
               className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-semibold border-2 border-white dark:border-gray-900 ring-1 ring-gray-200/50 dark:ring-gray-700/50"
@@ -83,6 +83,11 @@ export function PresenceBar({ peers, user }: PresenceBarProps) {
               {u.email?.[0]?.toUpperCase() || "?"}
             </div>
           ))}
+          {onlineList.length > 4 && (
+            <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-gray-600 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 border-2 border-white dark:border-gray-900">
+              +{onlineList.length - 4}
+            </div>
+          )}
         </div>
         <span className="text-xs font-medium text-gray-600 dark:text-gray-400 tabular-nums">
           {onlineCount} online
