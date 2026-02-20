@@ -7,6 +7,7 @@ import type { Board } from "@/lib/types/database";
 import type { User } from "@supabase/supabase-js";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { BoardPreview } from "@/components/board-preview";
+import { ShareBoardModal } from "@/components/share-board-modal";
 import { getRecentBoardIds, removeRecentBoard, clearRecentBoards } from "@/lib/recent-boards";
 
 export type BoardWithAccess = Board & { access: "owner" | "shared" };
@@ -15,12 +16,14 @@ type TabId = "all" | "starred" | "interview" | "recent";
 
 export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [boards, setBoards] = useState<BoardWithAccess[]>([]);
   const [loading, setLoading] = useState(true);
   const [createError, setCreateError] = useState("");
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
+  const [shareBoard, setShareBoard] = useState<{ id: string; name: string } | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("all");
   const [search, setSearch] = useState("");
   const [recentKey, setRecentKey] = useState(0);
@@ -53,13 +56,15 @@ export default function DashboardPage() {
   useEffect(() => {
     let cancelled = false;
     async function init() {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user ?? null;
       if (!user) {
         router.push("/auth");
         return;
       }
       if (cancelled) return;
       setUser(user);
+      setAccessToken(session?.access_token ?? null);
       await fetchMyBoards(user.id);
       if (cancelled) return;
       setLoading(false);
@@ -404,6 +409,23 @@ export default function DashboardPage() {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
+                                setShareBoard({ id: board.id, name: board.name });
+                              }}
+                              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"
+                              title="Share board"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
+                                <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" />
+                                <polyline points="16 6 12 2 8 6" />
+                                <line x1="12" y1="2" x2="12" y2="15" />
+                              </svg>
+                            </button>
+                          )}
+                          {board.access === "owner" && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setEditingBoardId(board.id);
                                 setEditName(board.name);
                               }}
@@ -508,6 +530,17 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Share board modal (from dashboard) */}
+      {shareBoard && user && (
+        <ShareBoardModal
+          boardId={shareBoard.id}
+          boardName={shareBoard.name}
+          currentUser={user}
+          accessToken={accessToken}
+          onClose={() => setShareBoard(null)}
+        />
       )}
     </div>
   );

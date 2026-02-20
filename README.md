@@ -52,7 +52,8 @@ Edit `.env.local`:
   - `LANGSMITH_API_KEY` or `LANGCHAIN_API_KEY` — your LangSmith API key
   - `LANGSMITH_TRACING=true` or `LANGCHAIN_TRACING=true` (use lowercase `true`; the SDK checks for the string `"true"`)
   - `LANGSMITH_ENDPOINT=https://api.smith.langchain.com` (or leave unset; app sets it when key is present)
-  - `LANGSMITH_PROJECT=CollabBoard` or `LANGCHAIN_PROJECT=CollabBoard` — project name in the dashboard (get from Supabase Settings → API → service_role; never expose in client)
+  - `LANGSMITH_PROJECT=CollabBoard` or `LANGCHAIN_PROJECT=CollabBoard` — project name in the dashboard
+  - The app uses a LangSmith `Client` and Next.js `after()` to flush trace batches before serverless shutdown, so traces show **Output** and **Latency** in the dashboard instead of empty columns.
 
 ### 4. Run locally
 

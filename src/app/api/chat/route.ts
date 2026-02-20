@@ -407,17 +407,27 @@ Guidelines:
         description: "Generate multiple sticky notes with brainstormed ideas on a topic. Creates 4-8 color-coded notes arranged in a grid inside a frame. Places the grid so it does not overlap existing elements. Use when the user asks to brainstorm, generate ideas, or wants suggestions.",
         inputSchema: z.object({
           topic: z.string().describe("The topic to brainstorm about"),
-          ideas: z.array(z.string()).describe("Array of idea texts, 4-8 items"),
+          ideas: z.array(z.string()).describe("Array of idea texts, 4-8 items; every item must have visible text"),
         }),
         execute: async ({ topic, ideas }) => {
           const colors = ["#FFEB3B", "#FF9800", "#F48FB1", "#CE93D8", "#90CAF9", "#80CBC4", "#A5D6A7", "#E8F5E9"];
-          const cols = Math.min(4, ideas.length);
-          const rows = Math.ceil(ideas.length / cols);
+          // Ensure every sticky has non-empty text so nothing is hidden or blank
+          const safeIdeas = ideas
+            .map((t, i) => (typeof t === "string" && t.trim() ? t.trim() : `Idea ${i + 1}`))
+            .filter(Boolean);
+          const count = Math.max(1, Math.min(8, safeIdeas.length));
+          const list = safeIdeas.slice(0, count);
+          // Single column for 3 or fewer so stickies stack with clear vertical gaps; otherwise 2 cols
+          const cols = list.length <= 3 ? 1 : Math.min(2, list.length);
+          const rows = Math.ceil(list.length / cols);
           const pad = 24;
+          const gap = 20;
           const cellW = 220;
-          const cellH = 220;
+          const cellH = 200;
+          const stickyW = cellW - 8;
+          const stickyH = cellH - gap;
           const gridW = cols * cellW + pad * 2;
-          const gridH = rows * cellH + pad * 2 + 32;
+          const gridH = rows * (stickyH + gap) + pad * 2 + 32 - gap;
           const start = await computeSuggestedPlacement(gridW, gridH);
 
           const { data: frameData } = await supabase
@@ -439,12 +449,13 @@ Guidelines:
 
           const created: string[] = [];
           if (frameId) created.push(frameId);
-          for (let i = 0; i < ideas.length; i++) {
+          for (let i = 0; i < list.length; i++) {
             const col = i % cols;
             const row = Math.floor(i / cols);
             const x = start.x + pad + col * cellW;
-            const y = start.y + pad + 32 + row * cellH;
+            const y = start.y + pad + 32 + row * (stickyH + gap);
             const bg = colors[i % colors.length];
+            const text = list[i];
             const { data, error } = await supabase
               .from("board_elements")
               .insert({
@@ -452,10 +463,10 @@ Guidelines:
                 type: "sticky_note",
                 x,
                 y,
-                width: cellW - 8,
-                height: cellH - 8,
+                width: stickyW,
+                height: stickyH,
                 color: bg,
-                text: ideas[i],
+                text,
                 properties: { textColor: contrastTextColor(bg), textAlign: "left", frameId },
                 created_by: userId,
               } as never)

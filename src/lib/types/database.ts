@@ -49,6 +49,32 @@ export interface Database {
           created_at?: string;
         };
       };
+      board_share_links: {
+        Row: {
+          id: string;
+          board_id: string;
+          role: "editor" | "viewer";
+          token: string;
+          created_at: string;
+          created_by: string | null;
+        };
+        Insert: {
+          id?: string;
+          board_id: string;
+          role?: "editor" | "viewer";
+          token?: string;
+          created_at?: string;
+          created_by?: string | null;
+        };
+        Update: {
+          id?: string;
+          board_id?: string;
+          role?: "editor" | "viewer";
+          token?: string;
+          created_at?: string;
+          created_by?: string | null;
+        };
+      };
       board_elements: {
         Row: {
           id: string;

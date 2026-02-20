@@ -21,6 +21,11 @@ export function ShareBoardModal({ boardId, boardName, currentUser, accessToken, 
   const [loading, setLoading] = useState(true);
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState("");
+  const [linkRole, setLinkRole] = useState<"editor" | "viewer">("editor");
+  const [shareLinkUrl, setShareLinkUrl] = useState<string | null>(null);
+  const [shareLinkLoading, setShareLinkLoading] = useState(false);
+  const [linkError, setLinkError] = useState("");
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +66,34 @@ export function ShareBoardModal({ boardId, boardName, currentUser, accessToken, 
     }
     setMembers((prev) => [...prev, { user_id: data.user_id, role }]);
     setEmail("");
+  }
+
+  async function handleCreateLink() {
+    setLinkError("");
+    setShareLinkLoading(true);
+    const res = await fetch(`/api/boards/${boardId}/share-link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: linkRole, accessToken }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setShareLinkLoading(false);
+    if (!res.ok) {
+      setLinkError(data.error || "Failed to create link");
+      return;
+    }
+    setShareLinkUrl(data.url ?? null);
+  }
+
+  async function copyLink() {
+    if (!shareLinkUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareLinkUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setLinkError("Could not copy");
+    }
   }
 
   return (
@@ -111,7 +144,7 @@ export function ShareBoardModal({ boardId, boardName, currentUser, accessToken, 
                       className="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
                     >
                       <option value="editor">Editor</option>
-                      <option value="viewer">Viewer</option>
+                      <option value="viewer">Reader</option>
                     </select>
                   </div>
                   {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
@@ -125,6 +158,47 @@ export function ShareBoardModal({ boardId, boardName, currentUser, accessToken, 
                 </button>
               </form>
               <p className="text-xs text-gray-400 dark:text-gray-500">They must have a CollabBoard account with this email.</p>
+
+              <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-2">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Share by link</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Anyone with the link can open the board. Choose access level:</p>
+                <div className="flex gap-2 items-center flex-wrap">
+                  <select
+                    value={linkRole}
+                    onChange={(e) => setLinkRole(e.target.value as "editor" | "viewer")}
+                    className="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                  >
+                    <option value="editor">Editor</option>
+                    <option value="viewer">Reader</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleCreateLink}
+                    disabled={shareLinkLoading}
+                    className="px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm font-medium disabled:opacity-50"
+                  >
+                    {shareLinkLoading ? "Creating…" : "Create link"}
+                  </button>
+                </div>
+                {linkError && <p className="text-sm text-red-600 dark:text-red-400">{linkError}</p>}
+                {shareLinkUrl && (
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="text"
+                      readOnly
+                      value={shareLinkUrl}
+                      className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={copyLink}
+                      className="shrink-0 px-3 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium"
+                    >
+                      {copied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>
