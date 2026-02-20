@@ -495,10 +495,10 @@ export default function BoardPage() {
   );
 
   const clearBoard = useCallback(async () => {
-    for (const el of elements) {
-      await deleteElement(el.id);
-    }
-  }, [elements, deleteElement]);
+    for (const el of elements) broadcastElementDeleted(el.id);
+    setElements([]);
+    await supabase.from("board_elements").delete().eq("board_id", boardId);
+  }, [elements, broadcastElementDeleted, boardId]);
 
   const clearBoardWithConfirm = useCallback(() => {
     if (elements.length === 0) return;

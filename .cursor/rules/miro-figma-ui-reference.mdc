@@ -1,0 +1,24 @@
+---
+description: Use Miro and Figma as UI/UX reference for canvas and editor
+globs: src/**/*.tsx, src/**/*.css
+alwaysApply: false
+---
+
+# Miro & Figma as UI Reference
+
+When changing or adding UI (canvas, selection, tools, panels, text editing), use **Miro** and **Figma** as the primary reference for look and behavior.
+
+## What to emulate
+
+- **Selection**: Single thin outline (1px), no double borders. Small, subtle resize handles (e.g. white/dark fill with thin colored stroke) that don’t dominate the canvas.
+- **Canvas chrome**: Minimal. No floating boxes or toolbars around the selection unless the user explicitly opens a panel (e.g. “Edit” / format panel). Avoid auto-opening panels on select.
+- **Text / caret**: Thin, 1px-style caret in stickies and code blocks. Good contrast for text and selection; no oversized or faint cursor.
+- **Empty state & tools**: Clean, uncluttered toolbars and hints. Quick actions and templates presented simply (e.g. central card with clear actions).
+- **Overall**: Calm, minimal UI so the board content is the focus. Match interaction patterns (select → single outline + handles; edit → cursor at start, thin caret; no extra floating UI unless requested).
+
+## When implementing
+
+- Prefer one thin selection border and small handles over thick borders and large handles.
+- Prefer opening panels on explicit user action (e.g. “Edit”) over opening on every selection.
+- Keep cursor/caret thin and readable; avoid resetting the cursor after the user has started typing.
+- For new features (tools, sharing, formatting), ask: “How would Miro or Figma show this?” and align with that level of simplicity and clarity.

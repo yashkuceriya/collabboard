@@ -367,9 +367,16 @@ LATENCY: Prefer fewer tool rounds. For "add 3 stickies", "add N sticky notes abo
         execute: async ({ objectId, color }) => {
           const el = await getElementById(objectId);
           if (!el) return { error: "Element not found on this board." };
+          const textColor = contrastTextColor(color);
+          const { data: existing } = await supabase
+            .from("board_elements")
+            .select("properties")
+            .eq("id", objectId)
+            .single() as { data: { properties: Record<string, unknown> } | null; error: unknown };
+          const oldProps = (existing?.properties ?? {}) as Record<string, unknown>;
           const { error } = await supabase
             .from("board_elements")
-            .update({ color } as never)
+            .update({ color, properties: { ...oldProps, textColor } } as never)
             .eq("id", objectId);
           if (error) return { error: error.message };
           return { updated: objectId };

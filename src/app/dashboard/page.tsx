@@ -110,7 +110,11 @@ export default function DashboardPage() {
 
   async function deleteBoard(id: string) {
     await supabase.from("board_elements").delete().eq("board_id", id);
-    await supabase.from("boards").delete().eq("id", id);
+    const { error } = await supabase.from("boards").delete().eq("id", id);
+    if (error) {
+      alert("Failed to delete board. Please try again.");
+      return;
+    }
     setBoards((prev) => prev.filter((b) => b.id !== id));
     setDeletingBoardId(null);
   }
@@ -360,7 +364,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {sortedBoards.map((board, i) => {
+            {sortedBoards.map((board) => {
               const gradients = [
                 "from-blue-500 to-indigo-500",
                 "from-emerald-500 to-teal-500",
@@ -369,7 +373,9 @@ export default function DashboardPage() {
                 "from-pink-500 to-rose-500",
                 "from-cyan-500 to-blue-500",
               ];
-              const grad = gradients[i % gradients.length];
+              let hash = 0;
+              for (let j = 0; j < board.id.length; j++) hash = ((hash << 5) - hash + board.id.charCodeAt(j)) | 0;
+              const grad = gradients[Math.abs(hash) % gradients.length];
               return (
                 <div
                   key={board.id}
@@ -512,7 +518,7 @@ export default function DashboardPage() {
                 <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 text-center mb-1">Delete board?</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 text-center mb-1">Delete &ldquo;{boards.find((b) => b.id === deletingBoardId)?.name ?? "board"}&rdquo;?</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-6">This will permanently delete the board and all its elements. This cannot be undone.</p>
             <div className="flex gap-3">
               <button

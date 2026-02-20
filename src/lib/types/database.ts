@@ -109,7 +109,7 @@ export interface Database {
         Update: {
           id?: string;
           board_id?: string;
-          type?: "sticky_note" | "rectangle" | "circle" | "text" | "frame" | "line" | "connector";
+          type?: "sticky_note" | "rectangle" | "circle" | "text" | "frame" | "line" | "connector" | "freehand";
           x?: number;
           y?: number;
           width?: number;

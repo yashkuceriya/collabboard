@@ -11,7 +11,7 @@ interface ShareBoardModalProps {
   onClose: () => void;
 }
 
-type Member = { user_id: string; role: string };
+type Member = { user_id: string; role: string; email?: string };
 
 export function ShareBoardModal({ boardId, boardName, currentUser, accessToken, onClose }: ShareBoardModalProps) {
   const [members, setMembers] = useState<Member[]>([]);
@@ -122,7 +122,7 @@ export function ShareBoardModal({ boardId, boardName, currentUser, accessToken, 
                 {members.map((m) => (
                   <li key={m.user_id} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
                     <span className="w-2 h-2 rounded-full bg-gray-400" />
-                    {m.user_id === currentUser.id ? "You" : "Editor"}
+                    {m.user_id === currentUser.id ? "You" : (m.email ?? `User ${m.user_id.slice(0, 6)}…`)}
                     <span className="text-xs text-gray-400">({m.role})</span>
                   </li>
                 ))}

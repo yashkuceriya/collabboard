@@ -21,13 +21,18 @@ function formatTime(iso: string) {
   return sameDay ? d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : d.toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-export function BoardChatPanel({ boardId, user, messages, loading, onSend, onClose, peerCount }: BoardChatPanelProps) {
+export function BoardChatPanel({ user, messages, loading, onSend, onClose, peerCount }: BoardChatPanelProps) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const wasAtBottomRef = useRef(true);
 
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
+    const el = listRef.current;
+    if (!el) return;
+    if (wasAtBottomRef.current) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }
   }, [messages]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -71,7 +76,14 @@ export function BoardChatPanel({ boardId, user, messages, loading, onSend, onClo
         </button>
       </div>
 
-      <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2 min-h-0">
+      <div
+        ref={listRef}
+        className="flex-1 overflow-y-auto px-4 py-3 space-y-2 min-h-0"
+        onScroll={() => {
+          const el = listRef.current;
+          if (el) wasAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+        }}
+      >
         {loading ? (
           <p className="text-xs text-gray-400 dark:text-gray-500">Loading messages…</p>
         ) : messages.length === 0 ? (

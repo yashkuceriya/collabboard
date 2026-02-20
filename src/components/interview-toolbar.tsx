@@ -55,7 +55,7 @@ function TimerWidget() {
   const secs = Math.abs(seconds) % 60;
   const display = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
   const isWarning = preset > 0 && seconds <= 60 && seconds > 0;
-  const isExpired = preset > 0 && seconds === 0 && preset > 0;
+  const isExpired = preset > 0 && seconds === 0;
 
   return (
     <div className="flex items-center gap-2">
