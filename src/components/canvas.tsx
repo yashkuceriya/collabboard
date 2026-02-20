@@ -7,7 +7,7 @@ import { FormatPanel } from "@/components/format-panel";
 import type { BoardElement, Json } from "@/lib/types/database";
 import type { Peer } from "@/hooks/use-presence";
 
-type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "line" | "text" | "connector" | "pen" | "eraser";
+type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "line" | "text" | "connector" | "pen" | "eraser" | "frame";
 
 interface CanvasProps {
   elements: BoardElement[];
@@ -643,7 +643,7 @@ export function Canvas({
     }
 
     // Draw-by-drag preview (rectangle / circle / line)
-    if (drawDraft && (tool === "rectangle" || tool === "circle" || tool === "line")) {
+    if (drawDraft && (tool === "rectangle" || tool === "circle" || tool === "line" || tool === "frame")) {
       ctx.save();
       ctx.lineWidth = 2 / viewport.zoom;
       ctx.setLineDash([6 / viewport.zoom, 4 / viewport.zoom]);
@@ -659,15 +659,24 @@ export function Canvas({
         const y = Math.min(drawDraft.startY, drawDraft.currentY);
         const w = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentX - drawDraft.startX));
         const h = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentY - drawDraft.startY));
-        ctx.strokeStyle = tool === "rectangle" ? "#42A5F5" : "#10B981";
-        if (tool === "rectangle") {
+        if (tool === "frame") {
+          ctx.strokeStyle = "#6366F1";
+          ctx.setLineDash([8 / viewport.zoom, 4 / viewport.zoom]);
           ctx.beginPath();
-          ctx.roundRect(x, y, w, h, 4);
+          ctx.roundRect(x, y, w, h, 10);
           ctx.stroke();
+          ctx.setLineDash([6 / viewport.zoom, 4 / viewport.zoom]);
         } else {
-          ctx.beginPath();
-          ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-          ctx.stroke();
+          ctx.strokeStyle = tool === "rectangle" ? "#42A5F5" : "#10B981";
+          if (tool === "rectangle") {
+            ctx.beginPath();
+            ctx.roundRect(x, y, w, h, 4);
+            ctx.stroke();
+          } else {
+            ctx.beginPath();
+            ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+            ctx.stroke();
+          }
         }
       }
       ctx.restore();
@@ -919,7 +928,7 @@ export function Canvas({
         setConnectorFromPoint(null);
         setConnectorPreview(null);
       }
-    } else if (tool === "rectangle" || tool === "circle" || tool === "line") {
+    } else if (tool === "rectangle" || tool === "circle" || tool === "line" || tool === "frame") {
       setDrawDraft({ startX: world.x, startY: world.y, currentX: world.x, currentY: world.y });
     } else if (tool === "sticky_note" || tool === "text") {
       void onCreate(tool, world.x, world.y);
@@ -1077,7 +1086,7 @@ export function Canvas({
       void onCreateFreehand([...strokePoints]);
       setStrokePoints([]);
     }
-    if (drawDraft && (tool === "rectangle" || tool === "circle" || tool === "line")) {
+    if (drawDraft && (tool === "rectangle" || tool === "circle" || tool === "line" || tool === "frame")) {
       if (tool === "line") {
         const dx = drawDraft.currentX - drawDraft.startX;
         const dy = drawDraft.currentY - drawDraft.startY;
@@ -1278,6 +1287,7 @@ export function Canvas({
       else if (key === "r") onToolChange("rectangle");
       else if (key === "o") onToolChange("circle");
       else if (key === "l") onToolChange("line");
+      else if (key === "f") onToolChange("frame");
       else if (key === "t") onToolChange("text");
       else if (key === "a") onToolChange("connector");
       else if (key === "p") onToolChange("pen");
@@ -1396,6 +1406,13 @@ export function Canvas({
                   >
                     Connect
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => { onToolChange("frame"); }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800/50 transition-colors"
+                  >
+                    Frame
+                  </button>
                 </>
               ) : (
                 <>
@@ -1424,6 +1441,13 @@ export function Canvas({
                     className="px-3.5 py-2 text-xs font-medium rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/50 transition-colors"
                   >
                     Circle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onToolChange("frame"); }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800/50 transition-colors"
+                  >
+                    Frame
                   </button>
                   <button
                     type="button"

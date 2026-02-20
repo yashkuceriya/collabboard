@@ -28,7 +28,7 @@ export default function BoardPage() {
   const [showChatPanel, setShowChatPanel] = useState(false);
   const [elements, setElements] = useState<BoardElement[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tool, setTool] = useState<"select" | "sticky_note" | "rectangle" | "circle" | "line" | "text" | "connector" | "pen" | "eraser">("select");
+  const [tool, setTool] = useState<"select" | "sticky_note" | "rectangle" | "circle" | "line" | "text" | "connector" | "pen" | "eraser" | "frame">("select");
   const [openEditorForId, setOpenEditorForId] = useState<string | null>(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
   const [boardName, setBoardName] = useState("Untitled Board");
@@ -141,7 +141,7 @@ export default function BoardPage() {
         width: storeW,
         height: storeH,
         color,
-        text: type === "sticky_note" ? "New note" : "",
+        text: type === "sticky_note" ? "New note" : type === "frame" ? "New frame" : "",
         properties: type === "sticky_note" ? { rotation: (Math.random() - 0.5) * 6 } : lineProps,
         created_by: user.id,
         updated_at: now,

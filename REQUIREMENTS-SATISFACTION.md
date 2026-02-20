@@ -31,7 +31,7 @@ This document maps the **official project requirements** (Building Real-Time Col
 | Shapes | Rectangles, circles, lines, solid colors | ✅ | Rect + circle + **line** all in toolbar and AI |
 | Connectors | Lines/arrows connecting objects | ✅ | Edge-based start/end; arrows; solid + dashed styles |
 | Text | Standalone text elements | ✅ | Toolbar + AI |
-| Frames | Group and organize content areas | ✅ | AI `createFrame` tool; dashed-border rendering on canvas with title label |
+| Frames | Group and organize content areas | ✅ | **Toolbar (F):** draw-by-drag to create; move frame moves all children. AI `createFrame`; dashed border + label; double-click to edit title |
 | Transforms | Move, resize, rotate | ✅ | Move, resize handles, rotation in format panel |
 | Selection | Single + multi-select (shift-click, drag-to-select) | ✅ | Shift-click toggle + marquee drag-to-select |
 | Operations | Delete, duplicate, copy/paste | ✅ | Delete ✅; Duplicate ✅ (Ctrl/Cmd+D); Copy/paste ✅ (Ctrl/Cmd+C/V) |
@@ -136,7 +136,7 @@ These are **deliverables you** produce; the codebase supports them but does not 
 **Fully satisfied:**
 
 - All 9 MVP requirements.
-- Core board: workspace, stickies, shapes (rect + circle + line), connectors (solid/dashed), text, frames, transforms (move/resize/rotate), delete, duplicate, copy/paste, multi-select (shift-click + marquee), freehand drawing (pen + eraser).
+- Core board: workspace, stickies, shapes (rect + circle + line), connectors (solid/dashed), text, **frames (toolbar F + AI; move frame moves children)**, transforms (move/resize/rotate), delete, duplicate, copy/paste, multi-select (shift-click + marquee), freehand drawing (pen + eraser).
 - Real-time: cursors, sync, presence, persistence, conflict handling (documented), reconnection (documented).
 - AI: 14 tools total (all 9 required schema tools + 5 extra), multi-step, shared state, overlap avoidance, readable colors.
 - Deployment, auth, README with architecture docs.
