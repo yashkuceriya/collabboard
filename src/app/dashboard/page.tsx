@@ -6,6 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import type { Board } from "@/lib/types/database";
 import type { User } from "@supabase/supabase-js";
 import { ThemeSwitcher } from "@/components/theme-switcher";
+import { BoardPreview } from "@/components/board-preview";
 import { getRecentBoardIds, removeRecentBoard, clearRecentBoards } from "@/lib/recent-boards";
 
 export type BoardWithAccess = Board & { access: "owner" | "shared" };
@@ -373,6 +374,7 @@ export default function DashboardPage() {
                   }}
                 >
                   <div className={`h-2 w-full bg-gradient-to-r ${grad}`} />
+                  <BoardPreview boardId={board.id} />
                   <div className="p-5">
                     <div className="flex items-center justify-between mb-3">
                       <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${grad} flex items-center justify-center shadow-sm`}>

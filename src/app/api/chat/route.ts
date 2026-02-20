@@ -2,8 +2,10 @@ import * as ai from "ai";
 import { streamText, tool, stepCountIs, convertToModelMessages } from "ai";
 import type { UIMessage } from "ai";
 import { openai } from "@ai-sdk/openai";
-import { wrapAISDK } from "langsmith/experimental/vercel";
+import { Client } from "langsmith";
+import { wrapAISDK, createLangSmithProviderOptions } from "langsmith/experimental/vercel";
 import { createClient } from "@supabase/supabase-js";
+import { after } from "next/server";
 import { z } from "zod";
 import type { Database } from "@/lib/types/database";
 
@@ -20,7 +22,8 @@ function ensureLangSmithEnv() {
   return key;
 }
 const langsmithKeyAtLoad = ensureLangSmithEnv();
-const traced = langsmithKeyAtLoad ? wrapAISDK(ai) : null;
+const langsmithClient = langsmithKeyAtLoad ? new Client() : null;
+const traced = langsmithClient ? wrapAISDK(ai, { client: langsmithClient }) : null;
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -105,13 +108,30 @@ export async function POST(req: Request) {
 
   // Ensure LangSmith env at request time (Vercel serverless can load module before env is available)
   const hasKey = !!ensureLangSmithEnv();
-  const streamFn = (hasKey ? wrapAISDK(ai) : null)?.streamText ?? traced?.streamText ?? streamText;
+  const client = hasKey ? new Client() : langsmithClient;
+  const streamFn = client ? wrapAISDK(ai, { client }).streamText : traced?.streamText ?? streamText;
+
+  // Flush LangSmith trace batches before serverless shuts down (fixes empty Output/Latency in dashboard)
+  if (client) {
+    after(async () => {
+      await client.awaitPendingTraceBatches();
+    });
+  }
 
   // Convert UIMessage[] (parts-based) to ModelMessage[] (content-based) for streamText
   const modelMessages = await convertToModelMessages(messages);
 
   const result = streamFn({
     model: openai("gpt-4o-mini"),
+    ...(client && {
+      providerOptions: {
+        langsmith: createLangSmithProviderOptions({
+          name: "CollabBoard Chat",
+          tags: ["collabboard", interviewMode ? "interview" : "creative"],
+          metadata: { interviewMode: !!interviewMode },
+        }),
+      },
+    }),
     system: `You are an AI assistant for a collaborative whiteboard called CollabBoard. You ONLY help with this whiteboard: creating and editing elements, connecting shapes, brainstorming, organizing, and summarizing board content.
 ${interviewMode ? `
 INTERVIEW MODE IS ACTIVE. The user is practicing for a technical interview (system design or coding). Help them think through problems step by step. When they ask for help:
@@ -136,7 +156,8 @@ Capabilities:
 - Create sticky notes, shapes (rectangle/circle), text elements, and frames (grouping areas)
 - Create connectors (arrows) between two shapes using createConnector(fromId, toId) — use getBoardState to get element ids
 - Create frames to group and label sections of the board (e.g. "Sprint Planning", SWOT quadrants). Elements inside a frame move together when the frame is moved.
-- When creating multiple related elements (e.g. SWOT, brainstorm), always wrap them in a frame using createFrame first, then place child elements inside the frame bounds
+- When creating multiple related elements (e.g. SWOT, brainstorm), always wrap them in a frame using createFrame first, then place child elements inside the frame bounds with clear spacing so every sticky is visible and text is readable at the top.
+- Sticky text is drawn at the top of each note; keep phrases short so they fit and stay visible. Use contrastTextColor so text is always readable (dark on light, light on dark).
 - Move, resize, recolor, and delete existing elements
 - Read the current board state to understand context
 - getSuggestedPlacement: call before createStickyNote, createShape, or createTextElement to get an (x, y) that does not overlap existing elements. Prefer this so new items do not cover the board.
@@ -196,7 +217,10 @@ Guidelines:
             posX = safe.x;
             posY = safe.y;
           }
-          const props: Record<string, unknown> = { textColor: contrastTextColor(bg) };
+          const props: Record<string, unknown> = {
+            textColor: contrastTextColor(bg),
+            textAlign: "left",
+          };
           if (frameId) props.frameId = frameId;
           const { data, error } = await supabase
             .from("board_elements")
@@ -386,12 +410,14 @@ Guidelines:
           ideas: z.array(z.string()).describe("Array of idea texts, 4-8 items"),
         }),
         execute: async ({ topic, ideas }) => {
-          const colors = ["#FFEB3B", "#FF9800", "#F48FB1", "#CE93D8", "#90CAF9", "#80CBC4", "#A5D6A7", "#FFFFFF"];
+          const colors = ["#FFEB3B", "#FF9800", "#F48FB1", "#CE93D8", "#90CAF9", "#80CBC4", "#A5D6A7", "#E8F5E9"];
           const cols = Math.min(4, ideas.length);
           const rows = Math.ceil(ideas.length / cols);
-          const pad = 20;
-          const gridW = cols * 220 + pad * 2;
-          const gridH = rows * 220 + pad * 2 + 30;
+          const pad = 24;
+          const cellW = 220;
+          const cellH = 220;
+          const gridW = cols * cellW + pad * 2;
+          const gridH = rows * cellH + pad * 2 + 32;
           const start = await computeSuggestedPlacement(gridW, gridH);
 
           const { data: frameData } = await supabase
@@ -416,8 +442,8 @@ Guidelines:
           for (let i = 0; i < ideas.length; i++) {
             const col = i % cols;
             const row = Math.floor(i / cols);
-            const x = start.x + pad + col * 220;
-            const y = start.y + pad + 30 + row * 220;
+            const x = start.x + pad + col * cellW;
+            const y = start.y + pad + 32 + row * cellH;
             const bg = colors[i % colors.length];
             const { data, error } = await supabase
               .from("board_elements")
@@ -426,11 +452,11 @@ Guidelines:
                 type: "sticky_note",
                 x,
                 y,
-                width: 200,
-                height: 200,
+                width: cellW - 8,
+                height: cellH - 8,
                 color: bg,
                 text: ideas[i],
-                properties: { textColor: contrastTextColor(bg), frameId },
+                properties: { textColor: contrastTextColor(bg), textAlign: "left", frameId },
                 created_by: userId,
               } as never)
               .select("id")

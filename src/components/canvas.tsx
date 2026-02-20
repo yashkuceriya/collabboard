@@ -46,6 +46,8 @@ const CURSOR_COLORS = [
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 const HANDLE_SIZE_WORLD = 10;
 const MIN_SIZE = 24;
+/** Inset (px) so only elements fully inside the frame bounds are captured */
+const FRAME_INSET = 2;
 
 function getResizeHandles(el: BoardElement): { handle: ResizeHandle; x: number; y: number }[] {
   const { x, y, width, height } = el;
@@ -299,27 +301,29 @@ export function Canvas({
     }
   }, [openEditorForId, onOpenEditorFulfilled, elements]);
 
-  // Place cursor at start (top) for all editable text: sticky notes, shapes, text/code blocks. Run before paint.
+  // Place cursor at start (top) for all editable text: stickies, shapes, text/code blocks.
+  // Run when editor opens and again after React has committed value so typing starts at top.
+  const editingIdRef = useRef<string | null>(null);
+  const runCursorToTop = useCallback((el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(0, 0);
+    el.scrollTop = 0;
+    el.scrollLeft = 0;
+  }, []);
   useLayoutEffect(() => {
     if (!editingId) return;
-    const run = (el: HTMLTextAreaElement) => {
-      el.focus();
-      el.setSelectionRange(0, 0);
-      el.scrollTop = 0;
+    editingIdRef.current = editingId;
+    runCursorToTop(editTextareaRef.current);
+    const id1 = requestAnimationFrame(() => runCursorToTop(editTextareaRef.current));
+    const id2 = requestAnimationFrame(() => runCursorToTop(editTextareaRef.current));
+    const t = setTimeout(() => runCursorToTop(editTextareaRef.current), 0);
+    return () => {
+      cancelAnimationFrame(id1);
+      cancelAnimationFrame(id2);
+      clearTimeout(t);
     };
-    const ta = editTextareaRef.current;
-    if (ta) {
-      run(ta);
-      const id = requestAnimationFrame(() => run(ta));
-      return () => cancelAnimationFrame(id);
-    }
-    // Ref may not be set yet (conditional render); try again next frame
-    const id = requestAnimationFrame(() => {
-      const el = editTextareaRef.current;
-      if (el) run(el);
-    });
-    return () => cancelAnimationFrame(id);
-  }, [editingId]);
+  }, [editingId, runCursorToTop]);
 
   // Screen coords → world coords
   const screenToWorld = useCallback(
@@ -1129,10 +1133,11 @@ export function Canvas({
         onUpdate(dragging.id, { x: el.x, y: el.y });
 
         if (el.type === "frame") {
+          const fx = el.x + FRAME_INSET, fy = el.y + FRAME_INSET, fx2 = el.x + el.width - FRAME_INSET, fy2 = el.y + el.height - FRAME_INSET;
           for (const child of elements) {
             if (child.id === el.id || child.type === "connector" || child.type === "frame") continue;
-            const inside = child.x >= el.x && child.y >= el.y &&
-              child.x + child.width <= el.x + el.width && child.y + child.height <= el.y + el.height;
+            const inside = child.x >= fx && child.y >= fy &&
+              child.x + child.width <= fx2 && child.y + child.height <= fy2;
             const curFrame = (child.properties as { frameId?: string } | undefined)?.frameId;
             if (inside && curFrame !== el.id) {
               onUpdate(child.id, { properties: { ...(child.properties as Record<string, Json>), frameId: el.id } as Json });
@@ -1145,8 +1150,8 @@ export function Canvas({
           const frames = elements.filter((f) => f.type === "frame" && f.id !== el.id);
           let assignedFrame: string | undefined;
           for (const frame of frames) {
-            if (el.x >= frame.x && el.y >= frame.y &&
-                el.x + el.width <= frame.x + frame.width && el.y + el.height <= frame.y + frame.height) {
+            const fx = frame.x + FRAME_INSET, fy = frame.y + FRAME_INSET, fx2 = frame.x + frame.width - FRAME_INSET, fy2 = frame.y + frame.height - FRAME_INSET;
+            if (el.x >= fx && el.y >= fy && el.x + el.width <= fx2 && el.y + el.height <= fy2) {
               assignedFrame = frame.id;
               break;
             }
@@ -1680,7 +1685,15 @@ export function Canvas({
         const minH = el.type === "text" ? Math.max(h, 120) : h;
         return (
           <textarea
-            ref={editTextareaRef}
+            ref={(el) => {
+              editTextareaRef.current = el;
+              if (el && editingId) {
+                el.focus();
+                el.setSelectionRange(0, 0);
+                el.scrollTop = 0;
+                el.scrollLeft = 0;
+              }
+            }}
             tabIndex={0}
             aria-label="Edit text"
             className={`absolute border-2 resize-none outline-none z-[100] focus:ring-2 focus:ring-blue-400 box-border ${isCodeBlock ? "border-blue-600 dark:border-blue-400" : "border-blue-500"}`}
@@ -1697,6 +1710,7 @@ export function Canvas({
               fontWeight,
               fontStyle,
               textAlign,
+              verticalAlign: "top",
               borderRadius: 4,
               ...(isCodeBlock && { borderLeft: `3px solid ${isDark ? "rgb(96 165 250)" : "rgb(37 99 235)"}` }),
               backgroundColor: isSticky ? el.color : `${el.color}22`,
