@@ -163,7 +163,8 @@ Capabilities:
 - Move, resize, recolor, and delete existing elements
 - Read the current board state to understand context
 - getSuggestedPlacement: call before createStickyNote, createShape, or createTextElement to get an (x, y) that does not overlap existing elements. Prefer this so new items do not cover the board.
-- Generate ideas: when asked to brainstorm, use generateIdeas; it places the grid without overlapping existing content
+- Generate ideas: when asked to brainstorm (small sets), use generateIdeas; it places the grid without overlapping existing content.
+- Bulk creation (HARD REQUIREMENT): when the user asks for 50, 100, 200, 500, "500+", or "lots of" objects/stickies/notes in one go, you MUST use createBulkStickyNotes with the requested count (50–500). Never refuse or offer only one sticky. Say yes and call the tool (e.g. createBulkStickyNotes with count 500 and theme "fun_facts").
 - Summarize: read all elements and provide a concise summary. When the user asks to summarize, also put the summary on the board by calling getSuggestedPlacement then createStickyNote with the summary text (e.g. "Summary: …" or "Board summary: …") so a Summary sticky appears.
 - Organize: rearrange elements into a neat grid or grouped layout
 
@@ -177,7 +178,7 @@ Guidelines:
 - Default sticky note colors: #FFEB3B (yellow), #FF9800 (orange), #F48FB1 (pink), #CE93D8 (purple), #90CAF9 (blue), #80CBC4 (teal), #A5D6A7 (green).
 - Always ensure text on stickies and text elements is readable: use dark text on light backgrounds and light text on dark backgrounds. The server sets textColor automatically, but prefer light background colors (the defaults above) so text is always clearly visible.
 
-LATENCY: Prefer fewer tool rounds. For "add 3 stickies", "add N sticky notes about X", or any request to add multiple stickies (2–8), use generateIdeas ONCE with topic and the list of texts — do NOT call createStickyNote multiple times. Only call getBoardState when you need element ids (e.g. to move, connect, delete, or summarize); for simple "add stickies" use generateIdeas without getBoardState.`,
+LATENCY: Prefer fewer tool rounds. For 2–8 stickies use generateIdeas ONCE. For 50–500 stickies (e.g. "create 500 objects", "500 with fun facts") use createBulkStickyNotes ONCE with the requested count — do NOT refuse or offer one note. Only call getBoardState when you need element ids (e.g. to move, connect, delete, or summarize).`,
     messages: modelMessages,
     stopWhen: stepCountIs(3),
     tools: {
@@ -487,6 +488,83 @@ LATENCY: Prefer fewer tool rounds. For "add 3 stickies", "add N sticky notes abo
             for (const row of stickyRows as { id: string }[]) created.push(row.id);
           }
           return { created, count: created.length };
+        },
+      }),
+      createBulkStickyNotes: tool({
+        description: "Create 50 to 500+ sticky notes in one go. Use when the user asks for '500 objects', '100 stickies', 'create 200 notes', '500+ objects', or any bulk creation (50–500). Each note gets a short fun fact or label. Insert in batches; returns total created. Required for the hard requirement: board must support 500+ objects in one go.",
+        inputSchema: z.object({
+          count: z.number().min(50).max(500).describe("Number of sticky notes to create (50–500)"),
+          theme: z.enum(["fun_facts", "ideas", "numbered"]).describe("Content theme for each note").optional(),
+        }),
+        execute: async ({ count, theme }) => {
+          const colors = ["#FFEB3B", "#FF9800", "#F48FB1", "#CE93D8", "#90CAF9", "#80CBC4", "#A5D6A7", "#E8F5E9"];
+          const facts = [
+            "The speed of light is 299,792,458 m/s",
+            "Honey never spoils",
+            "Octopuses have three hearts",
+            "A day on Venus is longer than a year",
+            "Bananas are berries but strawberries aren't",
+            "Water can boil and freeze at the same time",
+            "The Eiffel Tower grows 6 inches in summer",
+            "A group of flamingos is called a flamboyance",
+            "Humans share 60% of DNA with bananas",
+            "The moon has moonquakes",
+            "Sharks are older than trees",
+            "A jiffy is an actual unit of time",
+            "Wombat poop is cube-shaped",
+            "Hot water can freeze faster than cold",
+            "A cloud can weigh over a million pounds",
+            "Cows have best friends",
+            "Sea otters hold hands while sleeping",
+            "The human nose can detect over 1 trillion scents",
+            "Polar bears have black skin",
+            "A strawberry isn't a berry — it's an aggregate fruit",
+          ];
+          const safeCount = Math.max(50, Math.min(500, Math.floor(count)));
+          const cols = Math.ceil(Math.sqrt(safeCount));
+          const gap = 16;
+          const cellW = 200;
+          const cellH = 180;
+          const batchSize = 50;
+          let totalCreated = 0;
+          const start = await computeSuggestedPlacement(cellW * Math.min(cols, batchSize), cellH * Math.ceil(batchSize / cols));
+
+          for (let batchStart = 0; batchStart < safeCount; batchStart += batchSize) {
+            const batchEnd = Math.min(batchStart + batchSize, safeCount);
+            const stickies: Record<string, unknown>[] = [];
+            for (let i = batchStart; i < batchEnd; i++) {
+              const col = i % cols;
+              const row = Math.floor(i / cols);
+              const x = start.x + (col * (cellW + gap));
+              const y = start.y + (row * (cellH + gap));
+              const bg = colors[i % colors.length];
+              const text =
+                theme === "numbered"
+                  ? `#${i + 1}`
+                  : theme === "ideas"
+                    ? `Idea ${i + 1}`
+                    : facts[i % facts.length];
+              stickies.push({
+                board_id: boardId,
+                type: "sticky_note",
+                x,
+                y,
+                width: cellW,
+                height: cellH,
+                color: bg,
+                text: `#${i + 1}: ${text}`,
+                properties: { textColor: contrastTextColor(bg), textAlign: "left" },
+                created_by: userId,
+              });
+            }
+            const { data: inserted, error } = await supabase
+              .from("board_elements")
+              .insert(stickies as never)
+              .select("id");
+            if (error) return { error: error.message, created: totalCreated };
+            totalCreated += (inserted?.length ?? 0);
+          }
+          return { created: totalCreated };
         },
       }),
       createTextElement: tool({
