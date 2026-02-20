@@ -7,17 +7,20 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { Database } from "@/lib/types/database";
 
-// LangSmith: support both LANGSMITH_* and LANGCHAIN_* env vars. RunTree uses LANGCHAIN_* only, so mirror LANGSMITH_* into LANGCHAIN_* when set.
-const langsmithKey = process.env.LANGSMITH_API_KEY ?? process.env.LANGCHAIN_API_KEY;
-if (langsmithKey) {
-  if (!process.env.LANGCHAIN_API_KEY) process.env.LANGCHAIN_API_KEY = langsmithKey;
-  const endpoint = "https://api.smith.langchain.com";
-  if (process.env.LANGCHAIN_TRACING !== "true") process.env.LANGCHAIN_TRACING = "true";
-  if (process.env.LANGSMITH_TRACING !== "true") process.env.LANGSMITH_TRACING = "true";
-  if (!process.env.LANGCHAIN_ENDPOINT) process.env.LANGCHAIN_ENDPOINT = endpoint;
-  if (!process.env.LANGSMITH_ENDPOINT) process.env.LANGSMITH_ENDPOINT = endpoint;
+// LangSmith: support both LANGSMITH_* and LANGCHAIN_*. RunTree only reads LANGCHAIN_*, so we mirror.
+const LANGSMITH_ENDPOINT_URL = "https://api.smith.langchain.com";
+function ensureLangSmithEnv() {
+  const key = process.env.LANGSMITH_API_KEY ?? process.env.LANGCHAIN_API_KEY;
+  if (!key) return null;
+  process.env.LANGCHAIN_API_KEY = process.env.LANGCHAIN_API_KEY ?? key;
+  process.env.LANGCHAIN_TRACING = "true";
+  process.env.LANGSMITH_TRACING = "true";
+  process.env.LANGCHAIN_ENDPOINT = process.env.LANGCHAIN_ENDPOINT ?? LANGSMITH_ENDPOINT_URL;
+  process.env.LANGSMITH_ENDPOINT = process.env.LANGSMITH_ENDPOINT ?? LANGSMITH_ENDPOINT_URL;
+  return key;
 }
-const traced = langsmithKey ? wrapAISDK(ai) : null;
+const langsmithKeyAtLoad = ensureLangSmithEnv();
+const traced = langsmithKeyAtLoad ? wrapAISDK(ai) : null;
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -100,10 +103,12 @@ export async function POST(req: Request) {
     );
   }
 
+  // Ensure LangSmith env at request time (Vercel serverless can load module before env is available)
+  const hasKey = !!ensureLangSmithEnv();
+  const streamFn = (hasKey ? wrapAISDK(ai) : null)?.streamText ?? traced?.streamText ?? streamText;
+
   // Convert UIMessage[] (parts-based) to ModelMessage[] (content-based) for streamText
   const modelMessages = await convertToModelMessages(messages);
-
-  const streamFn = traced?.streamText ?? streamText;
 
   const result = streamFn({
     model: openai("gpt-4o-mini"),
@@ -128,8 +133,9 @@ Guardrails (strict):
 Reply in plain text only: no markdown, no asterisks, no code blocks, no backticks. Write like a short, friendly message (e.g. "Done. I added 3 sticky notes: Ideas, Goals, and Blockers."). Do not use ** or * for emphasis, or \` for code.
 
 Capabilities:
-- Create sticky notes, shapes (rectangle/circle), and text elements
+- Create sticky notes, shapes (rectangle/circle), text elements, and frames (grouping areas)
 - Create connectors (arrows) between two shapes using createConnector(fromId, toId) — use getBoardState to get element ids
+- Create frames to group and label sections of the board (e.g. "Sprint Planning", SWOT quadrants)
 - Move, resize, recolor, and delete existing elements
 - Read the current board state to understand context
 - getSuggestedPlacement: call before createStickyNote, createShape, or createTextElement to get an (x, y) that does not overlap existing elements. Prefer this so new items do not cover the board.
@@ -247,12 +253,14 @@ Guidelines:
         },
       }),
       createConnector: tool({
-        description: "Create an arrow (connector) between two shapes. Use getBoardState first to get the exact element ids. fromId and toId must be ids of non-connector elements (sticky_note, rectangle, circle, text) on this board. Use when the user asks to connect two shapes, draw an arrow between A and B, or link two elements.",
+        description: "Create an arrow (connector) between two shapes. Use getBoardState first to get the exact element ids. fromId and toId must be ids of non-connector elements (sticky_note, rectangle, circle, text, frame) on this board.",
         inputSchema: z.object({
           fromId: z.string().uuid().describe("UUID of the source element (from getBoardState)"),
           toId: z.string().uuid().describe("UUID of the target element (from getBoardState)"),
+          style: z.enum(["solid", "dashed"]).describe("Line style").optional(),
+          color: z.string().describe("Hex color for the connector").optional(),
         }),
-        execute: async ({ fromId, toId }) => {
+        execute: async ({ fromId, toId, style, color }) => {
           if (fromId === toId) return { error: "Source and target must be different elements." };
           const fromEl = await getElementById(fromId);
           const toEl = await getElementById(toId);
@@ -269,9 +277,9 @@ Guidelines:
               y: 0,
               width: 0,
               height: 0,
-              color: "#64748b",
+              color: color ?? "#64748b",
               text: "",
-              properties: { fromId, toId },
+              properties: { fromId, toId, style: style ?? "solid" },
               created_by: userId,
             } as never)
             .select("id")
@@ -434,6 +442,44 @@ Guidelines:
               color: bg,
               text,
               properties: { textColor: contrastTextColor(bg) },
+              created_by: userId,
+            } as never)
+            .select("id")
+            .single();
+          if (error) return { error: error.message };
+          return { created: (data as { id: string } | null)?.id };
+        },
+      }),
+      createFrame: tool({
+        description: "Create a frame (grouping area) on the board. Frames are labeled containers used to organize sections, e.g. 'Sprint Planning', 'SWOT Analysis'. Use when the user asks for a frame, section, area, quadrant, or grouping.",
+        inputSchema: z.object({
+          title: z.string().describe("Title/label of the frame"),
+          x: z.number().describe("X position"),
+          y: z.number().describe("Y position"),
+          width: z.number().describe("Width in board units").optional(),
+          height: z.number().describe("Height in board units").optional(),
+          color: z.string().describe("Hex color for the frame border").optional(),
+        }),
+        execute: async ({ title, x, y, width, height, color }) => {
+          const w = width ?? 400;
+          const h = height ?? 300;
+          let posX = x, posY = y;
+          if (await hasOverlap(posX, posY, w, h)) {
+            const safe = await computeSuggestedPlacement(w, h);
+            posX = safe.x;
+            posY = safe.y;
+          }
+          const { data, error } = await supabase
+            .from("board_elements")
+            .insert({
+              board_id: boardId,
+              type: "frame",
+              x: posX,
+              y: posY,
+              width: w,
+              height: h,
+              color: color ?? "#6366F1",
+              text: title,
               created_by: userId,
             } as never)
             .select("id")

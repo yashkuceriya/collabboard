@@ -50,7 +50,7 @@ Edit `.env.local`:
 - `SUPABASE_SERVICE_ROLE_KEY` — optional; required for **Share → Invite by email**
 - **LangSmith (optional)** — for AI cost/usage tracing in [LangSmith](https://smith.langchain.com), set in Vercel (either `LANGSMITH_*` or `LANGCHAIN_*`; both work):
   - `LANGSMITH_API_KEY` or `LANGCHAIN_API_KEY` — your LangSmith API key
-  - `LANGSMITH_TRACING=true` or `LANGCHAIN_TRACING=true`
+  - `LANGSMITH_TRACING=true` or `LANGCHAIN_TRACING=true` (use lowercase `true`; the SDK checks for the string `"true"`)
   - `LANGSMITH_ENDPOINT=https://api.smith.langchain.com` (or leave unset; app sets it when key is present)
   - `LANGSMITH_PROJECT=CollabBoard` or `LANGCHAIN_PROJECT=CollabBoard` — project name in the dashboard (get from Supabase Settings → API → service_role; never expose in client)
 
@@ -95,3 +95,33 @@ Open two browser windows (or one normal + one incognito) with **two different ac
 | Hosting | Vercel |
 
 **Constraint:** This project does not use Liveblocks. All real-time collaboration (cursor sync, presence, object sync) is implemented with Supabase Realtime only.
+
+## Architecture & Real-Time Sync
+
+### Conflict Handling
+
+CollabBoard uses **last-write-wins (LWW)** for simultaneous edits. Each element is a row in the `board_elements` Postgres table. When two users move the same element at the same time, the last `UPDATE` to reach Supabase wins. This is acceptable for a collaborative whiteboard where conflicts are rare and visually recoverable (the user can simply move the element again).
+
+### Real-Time Sync
+
+- **Object sync:** Supabase Realtime `postgres_changes` on the `board_elements` table. When any user creates, updates, or deletes an element, all other users receive the change within ~50–100ms. A broadcast fallback sends new/deleted elements via Supabase broadcast channel for faster propagation.
+- **Cursor sync:** Each user's cursor position is broadcast via Supabase Realtime `broadcast` (~30fps). Other clients receive and render cursors with name labels on the canvas.
+- **Presence:** Supabase Realtime `presence` tracks who is online on each board. The PresenceBar shows avatars and "N online."
+
+### Disconnect & Reconnect
+
+Supabase Realtime handles reconnection automatically. When a user loses connection:
+1. The Supabase client detects the drop and retries.
+2. On reconnect, the client re-subscribes to `postgres_changes`, `broadcast`, and `presence`.
+3. State is re-fetched from Postgres, so the user sees the latest board state.
+4. Any edits made while disconnected are lost (no offline queue); the user can redo them.
+
+### Persistence
+
+All board state is in Postgres. When all users leave and return later, the board is loaded fresh from the database. No data is lost.
+
+### Performance
+
+- **Viewport culling:** Only elements within the visible viewport are drawn, supporting 500+ elements.
+- **60 FPS target:** Canvas uses `requestAnimationFrame` and only redraws when state changes.
+- **Optimistic updates:** Element creation and movement are applied locally before the server roundtrip, then reconciled when the real ID arrives.
