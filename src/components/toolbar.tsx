@@ -100,7 +100,7 @@ const tools: { id: ToolId; label: string; shortcut: string; tooltip: string; Ico
 
 export function Toolbar({ tool, onToolChange }: ToolbarProps) {
   return (
-    <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-20 flex gap-0.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-2xl shadow-xl border border-gray-200/50 dark:border-gray-700/50 px-2 py-1.5">
+    <div role="toolbar" aria-label="Drawing tools" className="absolute left-1/2 -translate-x-1/2 bottom-6 z-20 flex gap-0.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-2xl shadow-lg shadow-gray-200/50 dark:shadow-black/30 border border-gray-200/50 dark:border-gray-700/50 px-2 py-1.5">
       {tools.map((t) => (
         <button
           key={t.id}
@@ -110,6 +110,7 @@ export function Toolbar({ tool, onToolChange }: ToolbarProps) {
               ? "bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-sm shadow-blue-500/25"
               : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"
           }`}
+          aria-label={t.tooltip}
           title={`${t.tooltip} [${t.shortcut}]`}
         >
           <t.Icon />

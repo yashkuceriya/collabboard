@@ -56,7 +56,7 @@ export function FormatPanel({
           </svg>
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-5">
+      <div className="flex-1 overflow-y-auto p-4 space-y-5 divide-y divide-gray-100 dark:divide-gray-800">
         {/* Fill */}
         <section>
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Fill</label>
@@ -67,13 +67,18 @@ export function FormatPanel({
                 type="button"
                 onClick={() => onColorChange(c.color)}
                 title={c.label}
-                className={`rounded-full border-2 transition-transform hover:scale-110 ${
+                aria-label={c.label}
+                className={`relative rounded-full border-2 transition-transform hover:scale-110 flex items-center justify-center ${
                   currentColor.toLowerCase() === c.color.toLowerCase()
                     ? "border-blue-500 dark:border-blue-400 scale-110"
                     : "border-gray-300 dark:border-gray-600"
                 }`}
                 style={{ backgroundColor: c.color, width: 24, height: 24 }}
-              />
+              >
+                {currentColor.toLowerCase() === c.color.toLowerCase() && (
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 8 7 12 13 4" /></svg>
+                )}
+              </button>
             ))}
           </div>
           <div className="flex items-center gap-2">

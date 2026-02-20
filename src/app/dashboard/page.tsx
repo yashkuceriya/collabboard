@@ -182,16 +182,35 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-blue-50/30 dark:from-gray-950 dark:to-gray-900">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg animate-pulse">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="3" />
-              <path d="M9 8h6M8 12h8M9 16h6" />
-            </svg>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50/30 dark:from-gray-950 dark:to-gray-900">
+        <header className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-gray-200 dark:bg-gray-800 animate-pulse" />
+            <div className="h-5 w-28 rounded bg-gray-200 dark:bg-gray-800 animate-pulse" />
           </div>
-          <p className="text-sm text-gray-400 dark:text-gray-500">Loading...</p>
-        </div>
+          <div className="h-8 w-24 rounded-lg bg-gray-200 dark:bg-gray-800 animate-pulse" />
+        </header>
+        <main className="max-w-5xl mx-auto px-6 py-8">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <div className="h-7 w-32 rounded bg-gray-200 dark:bg-gray-800 animate-pulse mb-2" />
+              <div className="h-4 w-48 rounded bg-gray-200 dark:bg-gray-800 animate-pulse" />
+            </div>
+            <div className="h-9 w-28 rounded-lg bg-gray-200 dark:bg-gray-800 animate-pulse" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-800/60 rounded-xl overflow-hidden">
+                <div className="h-1.5 w-full bg-gray-200 dark:bg-gray-800 animate-pulse" />
+                <div className="h-28 bg-gray-100 dark:bg-gray-800/50 animate-pulse" />
+                <div className="p-4 space-y-3">
+                  <div className="h-4 w-3/4 rounded bg-gray-200 dark:bg-gray-800 animate-pulse" />
+                  <div className="h-3 w-1/3 rounded bg-gray-200 dark:bg-gray-800 animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </main>
       </div>
     );
   }
