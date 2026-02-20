@@ -33,6 +33,8 @@ interface CanvasProps {
   onOpenEditorFulfilled?: () => void;
   /** Show FPS meter (for ?perf=1) */
   perfMode?: boolean;
+  /** Interview board mode — changes empty board hint */
+  interviewMode?: boolean;
 }
 
 // Color name labels for cursors
@@ -246,6 +248,7 @@ export function Canvas({
   openEditorForId,
   onOpenEditorFulfilled,
   perfMode = false,
+  interviewMode = false,
 }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1335,52 +1338,107 @@ export function Canvas({
       {elements.length === 0 && !dragging && !panning && !drawDraft && (
         <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
           <div className="text-center bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-2xl px-8 py-7 border border-gray-200/50 dark:border-gray-700/50 shadow-xl pointer-events-auto">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center mx-auto mb-3 shadow-sm">
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3 shadow-sm ${interviewMode ? "bg-gradient-to-br from-emerald-500 to-teal-500" : "bg-gradient-to-br from-blue-500 to-indigo-500"}`}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
-                <path d="M12 5v14M5 12h14" />
+                {interviewMode
+                  ? <><path d="M4 7V4h16v3M9 20h6M12 4v16" /></>
+                  : <path d="M12 5v14M5 12h14" />}
               </svg>
             </div>
-            <p className="text-base font-semibold text-gray-700 dark:text-gray-200 mb-1">Your board is empty</p>
-            <p className="text-sm text-gray-400 dark:text-gray-500 mb-5 max-w-[280px]">Get started by adding an element</p>
-            <div className="flex gap-2 justify-center">
-              <button
-                type="button"
-                onClick={() => {
-                  const cx = (containerRef.current?.clientWidth ?? 800) / 2;
-                  const cy = (containerRef.current?.clientHeight ?? 600) / 2;
-                  const world = screenToWorld(cx, cy);
-                  void onCreate("sticky_note", world.x, world.y);
-                }}
-                className="px-3.5 py-2 text-xs font-medium rounded-lg bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300 hover:bg-yellow-200 dark:hover:bg-yellow-900/60 border border-yellow-200 dark:border-yellow-800/50 transition-colors"
-              >
-                Sticky Note
-              </button>
-              <button
-                type="button"
-                onClick={() => { onToolChange("rectangle"); }}
-                className="px-3.5 py-2 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800/50 transition-colors"
-              >
-                Rectangle
-              </button>
-              <button
-                type="button"
-                onClick={() => { onToolChange("circle"); }}
-                className="px-3.5 py-2 text-xs font-medium rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/50 transition-colors"
-              >
-                Circle
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const cx = (containerRef.current?.clientWidth ?? 800) / 2;
-                  const cy = (containerRef.current?.clientHeight ?? 600) / 2;
-                  const world = screenToWorld(cx, cy);
-                  void onCreate("text", world.x, world.y);
-                }}
-                className="px-3.5 py-2 text-xs font-medium rounded-lg bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/50 border border-violet-200 dark:border-violet-800/50 transition-colors"
-              >
-                Text
-              </button>
+            <p className="text-base font-semibold text-gray-700 dark:text-gray-200 mb-1">
+              {interviewMode ? "Interview Board" : "Your board is empty"}
+            </p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 mb-5 max-w-[280px]">
+              {interviewMode
+                ? "Draw system diagrams, write code, and sketch your solution. Use the AI assistant for hints."
+                : "Get started by adding an element"}
+            </p>
+            <div className="flex gap-2 justify-center flex-wrap">
+              {interviewMode ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => { onToolChange("rectangle"); }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800/50 transition-colors"
+                  >
+                    Rectangle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onToolChange("circle"); }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/50 transition-colors"
+                  >
+                    Circle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onToolChange("pen"); }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 hover:bg-orange-100 dark:hover:bg-orange-900/50 border border-orange-200 dark:border-orange-800/50 transition-colors"
+                  >
+                    Draw
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cx = (containerRef.current?.clientWidth ?? 800) / 2;
+                      const cy = (containerRef.current?.clientHeight ?? 600) / 2;
+                      const world = screenToWorld(cx, cy);
+                      void onCreate("text", world.x, world.y);
+                    }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/50 border border-violet-200 dark:border-violet-800/50 transition-colors"
+                  >
+                    Code Block
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onToolChange("connector"); }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-gray-50 dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 border border-gray-200 dark:border-gray-700/50 transition-colors"
+                  >
+                    Connect
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cx = (containerRef.current?.clientWidth ?? 800) / 2;
+                      const cy = (containerRef.current?.clientHeight ?? 600) / 2;
+                      const world = screenToWorld(cx, cy);
+                      void onCreate("sticky_note", world.x, world.y);
+                    }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300 hover:bg-yellow-200 dark:hover:bg-yellow-900/60 border border-yellow-200 dark:border-yellow-800/50 transition-colors"
+                  >
+                    Sticky Note
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onToolChange("rectangle"); }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800/50 transition-colors"
+                  >
+                    Rectangle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onToolChange("circle"); }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/50 transition-colors"
+                  >
+                    Circle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cx = (containerRef.current?.clientWidth ?? 800) / 2;
+                      const cy = (containerRef.current?.clientHeight ?? 600) / 2;
+                      const world = screenToWorld(cx, cy);
+                      void onCreate("text", world.x, world.y);
+                    }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/50 border border-violet-200 dark:border-violet-800/50 transition-colors"
+                  >
+                    Text
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

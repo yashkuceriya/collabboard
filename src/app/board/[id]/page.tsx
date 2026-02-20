@@ -671,6 +671,7 @@ export default function BoardPage() {
         openEditorForId={openEditorForId}
         onOpenEditorFulfilled={() => setOpenEditorForId(null)}
         perfMode={perfMode}
+        interviewMode={interviewMode}
       />
     </div>
   );
