@@ -111,6 +111,21 @@ export default function BoardPage() {
     await supabase.from("boards").update({ name: trimmed } as never).eq("id", boardId);
   }
 
+  // Re-fetch all elements from DB (used after AI tool calls to ensure server-created objects appear)
+  const refreshElements = useCallback(async () => {
+    const { data } = await supabase
+      .from("board_elements")
+      .select("*")
+      .eq("board_id", boardId)
+      .order("created_at", { ascending: true });
+    const fromDb = (data as BoardElement[]) || [];
+    setElements((prev) => {
+      const idsFromDb = new Set(fromDb.map((e) => e.id));
+      const fromRealtime = prev.filter((e) => !idsFromDb.has(e.id));
+      return sortElementsByOrder([...fromDb, ...fromRealtime]);
+    });
+  }, [boardId]);
+
   // Real-time element sync (postgres_changes + broadcast fallback for add/delete)
   const { broadcastElement, broadcastElementUpdated, broadcastElementDeleted, syncLatencyRef } = useRealtimeElements(
     boardId,
@@ -543,6 +558,7 @@ export default function BoardPage() {
           accessToken={accessToken}
           onClose={() => setShowChatPanel(false)}
           interviewMode={interviewMode}
+          onAiFinished={refreshElements}
         />
       )}
 

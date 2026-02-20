@@ -2,7 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { TextStreamChatTransport } from "ai";
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback, useState, useEffect, useRef } from "react";
 import type { User } from "@supabase/supabase-js";
 import type { UIMessage } from "ai";
 
@@ -12,6 +12,8 @@ interface ChatPanelProps {
   accessToken: string | null;
   onClose: () => void;
   interviewMode?: boolean;
+  /** Called after AI finishes streaming so the board can re-fetch elements created by tools */
+  onAiFinished?: () => void;
 }
 
 function getMessageText(m: UIMessage): string {
@@ -33,7 +35,7 @@ function plainText(s: string): string {
     .trim();
 }
 
-export function ChatPanel({ boardId, user, accessToken, onClose, interviewMode }: ChatPanelProps) {
+export function ChatPanel({ boardId, user, accessToken, onClose, interviewMode, onAiFinished }: ChatPanelProps) {
   const [input, setInput] = useState("");
 
   const transport = useMemo(
@@ -55,6 +57,17 @@ export function ChatPanel({ boardId, user, accessToken, onClose, interviewMode }
   });
 
   const isLoading = status === "streaming" || status === "submitted";
+
+  // When AI finishes streaming, refresh board elements so tool-created objects appear instantly
+  const prevStatusRef = useRef(status);
+  useEffect(() => {
+    const wasStreaming = prevStatusRef.current === "streaming" || prevStatusRef.current === "submitted";
+    const nowReady = status === "ready";
+    prevStatusRef.current = status;
+    if (wasStreaming && nowReady && onAiFinished) {
+      onAiFinished();
+    }
+  }, [status, onAiFinished]);
 
   const onSubmit = useCallback(
     (e: React.FormEvent) => {

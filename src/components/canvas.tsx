@@ -286,7 +286,7 @@ export function Canvas({
 }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const drawCountRef = useRef(0);
+  // FPS state updated by the continuous rAF loop
   const [fps, setFps] = useState(0);
   const { effective: themeMode } = useTheme();
   const isDark = themeMode === "dark";
@@ -924,30 +924,39 @@ export function Canvas({
       ctx.restore();
     });
     visibleCountRef.current = visibleDrawn;
-    if (perfMode) drawCountRef.current++;
   }, [elements, sortedElements, viewport, selectedId, selectedIds, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, perfMode, idToElement]);
 
-  // FPS sampling when perf mode is on (uses ref to avoid triggering redraws)
+  // Continuous rAF render loop — runs at display refresh rate (60/120 Hz)
+  // like Miro/Figma for maximum responsiveness and accurate FPS measurement
   const fpsRef = useRef(0);
-  useEffect(() => {
-    if (!perfMode) return;
-    const id = setInterval(() => {
-      fpsRef.current = drawCountRef.current;
-      setFps(drawCountRef.current);
-      drawCountRef.current = 0;
-    }, 1000);
-    return () => clearInterval(id);
-  }, [perfMode]);
-
-  // Redraw when state changes (no continuous rAF loop)
-  useEffect(() => {
-    const raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
-  }, [draw]);
-
-  // Resize observer — stable (uses ref so it never re-attaches)
   const drawRef = useRef(draw);
   drawRef.current = draw;
+  useEffect(() => {
+    let running = true;
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+
+    function loop() {
+      if (!running) return;
+      drawRef.current();
+      frameCount++;
+
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        fpsRef.current = frameCount;
+        setFps(frameCount);
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+
+      requestAnimationFrame(loop);
+    }
+
+    requestAnimationFrame(loop);
+    return () => { running = false; };
+  }, []);
+
+  // Resize observer — stable (uses ref so it never re-attaches)
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
