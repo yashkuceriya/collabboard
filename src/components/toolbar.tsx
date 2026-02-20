@@ -53,6 +53,21 @@ function IconLine() {
     </svg>
   );
 }
+function IconPen() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 14l3-1L13.5 4.5a1.4 1.4 0 00-2-2L3 11l-1 3z" />
+    </svg>
+  );
+}
+function IconEraser() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 14h8" />
+      <path d="M3.5 10.5L10 4l3 3-6.5 6.5a1 1 0 01-.7.3H4.5a1 1 0 01-.7-.3L2.3 12a1 1 0 010-1.4l1.2-1z" />
+    </svg>
+  );
+}
 function IconConnector() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -70,6 +85,8 @@ const tools: { id: ToolId; label: string; shortcut: string; tooltip: string; Ico
   { id: "line", label: "Line", shortcut: "L", tooltip: "Draw a line", Icon: IconLine },
   { id: "text", label: "Text", shortcut: "T", tooltip: "Add text", Icon: IconText },
   { id: "connector", label: "Connect", shortcut: "A", tooltip: "Click two shapes to connect them with an arrow", Icon: IconConnector },
+  { id: "pen", label: "Draw", shortcut: "P", tooltip: "Freehand draw", Icon: IconPen },
+  { id: "eraser", label: "Eraser", shortcut: "E", tooltip: "Click an element to delete it", Icon: IconEraser },
 ];
 
 export function Toolbar({ tool, onToolChange }: ToolbarProps) {

@@ -122,7 +122,7 @@ function ToolButton({
 export function InterviewToolbar({ tool, onToolChange, onInsertTemplate, onInsertCodeBlock, onClearBoard }: InterviewToolbarProps) {
   return (
     <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-xl shadow-lg border border-gray-200/50 dark:border-gray-700/50 px-4 py-2.5">
-      {/* Drawing tools — curated for interview: no sticky notes, no pen/eraser */}
+      {/* Drawing tools for interview */}
       <div className="flex items-center gap-1.5">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mr-0.5">Tools</span>
         {onToolChange && (
@@ -136,11 +136,20 @@ export function InterviewToolbar({ tool, onToolChange, onInsertTemplate, onInser
             <ToolButton active={tool === "circle"} onClick={() => onToolChange("circle")} label="Circle (O)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /></svg>
             </ToolButton>
+            <ToolButton active={(tool as string) === "line"} onClick={() => onToolChange("line" as InterviewTool)} label="Line (L)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 20L20 4" /></svg>
+            </ToolButton>
             <ToolButton active={tool === "text"} onClick={() => onToolChange("text")} label="Text (T)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 7V4h16v3M9 20h6M12 4v16" /></svg>
             </ToolButton>
             <ToolButton active={tool === "connector"} onClick={() => onToolChange("connector")} label="Connect (A)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h10" /><path d="M12 5l5 7-5 7" /></svg>
+            </ToolButton>
+            <ToolButton active={tool === "pen"} onClick={() => onToolChange("pen")} label="Draw (P)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21l4-1L18.5 8.5a2 2 0 00-3-3L4 17l-1 4z" /></svg>
+            </ToolButton>
+            <ToolButton active={tool === "eraser"} onClick={() => onToolChange("eraser")} label="Eraser (E)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 21h10" /><path d="M5 15l7-7 4 4-7 7a1.5 1.5 0 01-1 .4H6.5a1.5 1.5 0 01-1-.4L3.4 17a1.5 1.5 0 010-2l1.6-1z" /></svg>
             </ToolButton>
             {onInsertCodeBlock && (
               <button
