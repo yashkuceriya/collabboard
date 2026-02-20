@@ -150,3 +150,68 @@ These are **deliverables you** produce; the codebase supports them but does not 
 3. AI Cost Analysis
 4. Demo video
 5. Social post
+
+---
+
+## Pre-submit verification (test against hard requirements)
+
+Run through this list before submission to confirm each requirement passes.
+
+### MVP (9 items — hard gate)
+
+| # | Requirement | How to test |
+|---|-------------|-------------|
+| 1 | Infinite board, pan/zoom | Open a board → drag empty area to pan, scroll to zoom (0.1–5x). Grid dots visible. |
+| 2 | Sticky notes, editable text | Add sticky (toolbar or N) → double-click → type → click outside to save. |
+| 3 | At least one shape (rect, circle, or line) | Use Rectangle (R), Circle (O), or Line (L) from toolbar; draw on canvas. |
+| 4 | Create, move, edit objects | Create any element, drag to move, double-click to edit text, use resize handles when selected. |
+| 5 | Real-time sync (2+ users) | Open same board in two browsers (or incognito); create/move in one → see update in other. |
+| 6 | Multiplayer cursors with names | Same as above; see other user’s cursor and name label on canvas. |
+| 7 | Presence (who’s online) | Top bar shows “N online” and avatars. |
+| 8 | User authentication | Sign up / Sign in from `/auth`; dashboard shows only your boards. |
+| 9 | Deployed and publicly accessible | Open production URL; no localhost required. |
+
+### Core board features
+
+| Feature | How to test |
+|---------|-------------|
+| Sticky notes | Create, edit text, change color (Edit → Format panel). |
+| Shapes (rect, circle, line) | Toolbar: Rectangle, Circle, Line; draw by drag. All three work. |
+| Connectors | Connect (A) → click edge of shape 1 → click edge of shape 2; arrow appears and follows shapes. |
+| Text | Text (T) → click to add; double-click to edit. |
+| Frames | Frame (F) in toolbar → drag to draw. Add elements inside; move frame → children move. Double-click frame to edit title. |
+| Transforms | Select → drag to move; corner handles to resize; Format panel for rotation. |
+| Multi-select | Shift+click or marquee drag; Delete removes all selected. |
+| Delete, duplicate, copy/paste | Delete/Backspace; Ctrl/Cmd+D duplicate; Ctrl/Cmd+C, Ctrl/Cmd+V. |
+| Pen & eraser | Draw (P) freehand; Eraser (E) to remove elements. |
+
+### Real-time
+
+| Item | How to test |
+|------|-------------|
+| Object sync | Edits appear for other users within a couple of seconds. |
+| Cursors | Other user’s cursor and label visible. |
+| Presence | “N online” and avatars correct. |
+
+### AI agent
+
+| Item | How to test |
+|------|-------------|
+| 6+ command types | Chat: “Add 3 sticky notes about product ideas”, “Create a frame called Sprint Planning”, “Connect these two shapes”, “Arrange in a grid”, “Change color of the note to red”. |
+| getBoardState | AI can refer to existing elements by id (move, connect, delete). |
+| createFrame | “Create a frame called Backlog” or “Create a SWOT analysis”. |
+| Multi-step | “Add a title, then add 3 stickies below it” → AI does multiple steps. |
+| Latency | “Add 3 stickies about X” should complete in a few seconds (uses generateIdeas in one call). |
+
+### Quick smoke test (≈2 min)
+
+1. **Auth:** Sign out → sign in → see dashboard.
+2. **New board:** Create board → add sticky, rectangle, frame (drag), line (drag).
+3. **Frame:** Put sticky inside frame → move frame → sticky moves.
+4. **Real-time:** Second browser → same board → move element in first → see in second.
+5. **AI:** “Create a frame called Backlog and add 2 sticky notes inside it.”
+6. **Interview:** Create interview board → see “Interview Board” empty state, timer, Templates, Code.
+7. **Multi-select:** Marquee select several → Delete → all removed.
+8. **Copy/paste:** Select → Ctrl+C → Ctrl+V → duplicate with offset.
+
+If all rows and steps pass, the project satisfies the hard requirements.

@@ -149,11 +149,12 @@ export function usePresence(boardId: string, user: User | null) {
   }, [boardId, user?.id]);
 
   const lastSend = useRef(0);
+  const CURSOR_BROADCAST_MS = 50;
   const broadcastCursor = useCallback(
     (x: number, y: number) => {
       if (!subscribedRef.current || !channelRef.current || !user) return;
       const now = Date.now();
-      if (now - lastSend.current < 35) return;
+      if (now - lastSend.current < CURSOR_BROADCAST_MS) return;
       lastSend.current = now;
 
       channelRef.current.send({

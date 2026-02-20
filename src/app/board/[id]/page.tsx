@@ -500,6 +500,12 @@ export default function BoardPage() {
     }
   }, [elements, deleteElement]);
 
+  const clearBoardWithConfirm = useCallback(() => {
+    if (elements.length === 0) return;
+    if (typeof window !== "undefined" && !window.confirm("Clear entire board? This cannot be undone.")) return;
+    void clearBoard();
+  }, [elements.length, clearBoard]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
@@ -656,7 +662,7 @@ export default function BoardPage() {
           onToolChange={setTool}
           onInsertTemplate={insertTemplate}
           onInsertCodeBlock={insertCodeBlock}
-          onClearBoard={clearBoard}
+          onClearBoard={clearBoardWithConfirm}
         />
       )}
 
@@ -689,6 +695,7 @@ export default function BoardPage() {
         onOpenEditorFulfilled={() => setOpenEditorForId(null)}
         perfMode={perfMode}
         interviewMode={interviewMode}
+        onInsertCodeBlock={interviewMode ? () => { void insertCodeBlock(); } : undefined}
       />
     </div>
   );

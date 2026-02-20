@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useLayoutEffect, useCallback, useState } from "react";
+import { useRef, useEffect, useLayoutEffect, useCallback, useState, useMemo } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { FormatPanel } from "@/components/format-panel";
 import type { BoardElement, Json } from "@/lib/types/database";
@@ -32,8 +32,10 @@ interface CanvasProps {
   onOpenEditorFulfilled?: () => void;
   /** Show FPS meter (for ?perf=1) */
   perfMode?: boolean;
-  /** Interview board mode — changes empty board hint */
+  /** Interview board mode — changes empty board hint and quick actions */
   interviewMode?: boolean;
+  /** When provided (e.g. interview mode), empty-state "Code Block" calls this instead of creating a small text */
+  onInsertCodeBlock?: () => void | Promise<void>;
 }
 
 // Color name labels for cursors
@@ -130,18 +132,35 @@ function clipToShapeEdge(el: BoardElement, targetX: number, targetY: number): { 
   return clipToRectEdge(cx, cy, el.width, el.height, targetX, targetY);
 }
 
+const SPATIAL_CELL = 250;
+const SPATIAL_INDEX_THRESHOLD = 80;
+
+function buildSpatialIndex(elements: BoardElement[]): Map<string, BoardElement[]> {
+  const index = new Map<string, BoardElement[]>();
+  for (const el of elements) {
+    if (el.type === "connector") continue;
+    const cx = el.x + el.width / 2;
+    const cy = el.y + el.height / 2;
+    const key = `${Math.floor(cx / SPATIAL_CELL)},${Math.floor(cy / SPATIAL_CELL)}`;
+    const list = index.get(key) ?? [];
+    list.push(el);
+    index.set(key, list);
+  }
+  return index;
+}
+
 function getConnectorEndpoints(
   el: BoardElement,
-  elements: BoardElement[]
+  elementsOrMap: BoardElement[] | Map<string, BoardElement>
 ): { x1: number; y1: number; x2: number; y2: number } | null {
   if (el.type !== "connector") return null;
   const props = el.properties as Record<string, string> | undefined;
   const fromId = props?.fromId;
   const toId = props?.toId;
   if (!fromId || !toId) return null;
-  const fromEl = elements.find((e) => e.id === fromId && e.type !== "connector");
-  const toEl = elements.find((e) => e.id === toId && e.type !== "connector");
-  if (!fromEl || !toEl) return null;
+  const fromEl = elementsOrMap instanceof Map ? elementsOrMap.get(fromId) : elementsOrMap.find((e) => e.id === fromId && e.type !== "connector");
+  const toEl = elementsOrMap instanceof Map ? elementsOrMap.get(toId) : elementsOrMap.find((e) => e.id === toId && e.type !== "connector");
+  if (!fromEl || !toEl || fromEl.type === "connector" || toEl.type === "connector") return null;
   const fromCenter = { x: fromEl.x + fromEl.width / 2, y: fromEl.y + fromEl.height / 2 };
   const toCenter = { x: toEl.x + toEl.width / 2, y: toEl.y + toEl.height / 2 };
   const start = clipToShapeEdge(fromEl, toCenter.x, toCenter.y);
@@ -250,6 +269,7 @@ export function Canvas({
   onOpenEditorFulfilled,
   perfMode = false,
   interviewMode = false,
+  onInsertCodeBlock,
 }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -343,16 +363,23 @@ export function Canvas({
   );
 
   // Hit test: find element at screen position (shapes first, then connectors by distance to line)
+  const spatialIndex = useMemo(
+    () => (elements.length > SPATIAL_INDEX_THRESHOLD ? buildSpatialIndex(elements) : null),
+    [elements]
+  );
+
+  const idToElement = useMemo(() => new Map(elements.map((e) => [e.id, e])), [elements]);
+
   const hitTest = useCallback(
     (sx: number, sy: number) => {
       const { x, y } = screenToWorld(sx, sy);
       const threshold = 12 / viewport.zoom;
-      for (let i = elements.length - 1; i >= 0; i--) {
-        const el = elements[i];
-        if (el.type === "connector") {
-          const pts = getConnectorEndpoints(el, elements);
-          if (pts && distanceToSegment(x, y, pts.x1, pts.y1, pts.x2, pts.y2) <= threshold) return el;
-        } else if (el.type === "freehand") {
+      const boxCandidates = spatialIndex
+        ? (spatialIndex.get(`${Math.floor(x / SPATIAL_CELL)},${Math.floor(y / SPATIAL_CELL)}`) ?? [])
+        : elements;
+      for (let i = boxCandidates.length - 1; i >= 0; i--) {
+        const el = boxCandidates[i];
+        if (el.type === "freehand") {
           const pts = (el.properties as { points?: { x: number; y: number }[] })?.points;
           if (pts && pts.length >= 2) {
             for (let j = 0; j < pts.length - 1; j++) {
@@ -368,9 +395,17 @@ export function Canvas({
           return el;
         }
       }
+      if (spatialIndex) {
+        for (let i = elements.length - 1; i >= 0; i--) {
+          const el = elements[i];
+          if (el.type !== "connector") continue;
+          const pts = getConnectorEndpoints(el, idToElement);
+          if (pts && distanceToSegment(x, y, pts.x1, pts.y1, pts.x2, pts.y2) <= threshold) return el;
+        }
+      }
       return null;
     },
-    [elements, screenToWorld, viewport.zoom]
+    [elements, screenToWorld, viewport.zoom, spatialIndex, idToElement]
   );
 
   // Draw everything
@@ -614,7 +649,7 @@ export function Canvas({
     const arrowLen = 14 / viewport.zoom;
     for (const el of elements) {
       if (el.type !== "connector") continue;
-      const pts = getConnectorEndpoints(el, elements);
+      const pts = getConnectorEndpoints(el, idToElement);
       if (!pts) continue;
       const cx = Math.min(pts.x1, pts.x2);
       const cy = Math.min(pts.y1, pts.y2);
@@ -831,7 +866,7 @@ export function Canvas({
       ctx.restore();
     });
     if (perfMode) drawCountRef.current++;
-  }, [elements, viewport, selectedId, selectedIds, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, perfMode]);
+  }, [elements, viewport, selectedId, selectedIds, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, perfMode, idToElement]);
 
   // FPS sampling when perf mode is on
   useEffect(() => {
@@ -1073,7 +1108,24 @@ export function Canvas({
       const mx2 = Math.max(marquee.startX, marquee.currentX);
       const my2 = Math.max(marquee.startY, marquee.currentY);
       if (mx2 - mx1 > 5 || my2 - my1 > 5) {
-        const hit = elements.filter(
+        let candidates: BoardElement[];
+        if (spatialIndex) {
+          const cminX = Math.floor(mx1 / SPATIAL_CELL);
+          const cmaxX = Math.floor(mx2 / SPATIAL_CELL);
+          const cminY = Math.floor(my1 / SPATIAL_CELL);
+          const cmaxY = Math.floor(my2 / SPATIAL_CELL);
+          const set = new Set<BoardElement>();
+          for (let cx = cminX; cx <= cmaxX; cx++) {
+            for (let cy = cminY; cy <= cmaxY; cy++) {
+              const list = spatialIndex.get(`${cx},${cy}`) ?? [];
+              list.forEach((el) => set.add(el));
+            }
+          }
+          candidates = [...set];
+        } else {
+          candidates = elements;
+        }
+        const hit = candidates.filter(
           (el) => el.type !== "connector" && el.type !== "freehand" && el.x < mx2 && el.x + el.width > mx1 && el.y < my2 && el.y + el.height > my1
         );
         if (hit.length > 0) {
@@ -1233,8 +1285,7 @@ export function Canvas({
   const selectedElement = selectedId ? elements.find((e) => e.id === selectedId) : null;
   useEffect(() => {
     if (!selectedId) setFormatPanelOpen(false);
-    else if (selectedElement && selectedElement.type !== "connector") setFormatPanelOpen(true);
-  }, [selectedId, selectedElement]);
+  }, [selectedId]);
   const canDeleteSelected =
     selectedId &&
     !editingId &&
@@ -1395,10 +1446,14 @@ export function Canvas({
                   <button
                     type="button"
                     onClick={() => {
-                      const cx = (containerRef.current?.clientWidth ?? 800) / 2;
-                      const cy = (containerRef.current?.clientHeight ?? 600) / 2;
-                      const world = screenToWorld(cx, cy);
-                      void onCreate("text", world.x, world.y);
+                      if (onInsertCodeBlock) {
+                        void onInsertCodeBlock();
+                      } else {
+                        const cx = (containerRef.current?.clientWidth ?? 800) / 2;
+                        const cy = (containerRef.current?.clientHeight ?? 600) / 2;
+                        const world = screenToWorld(cx, cy);
+                        void onCreate("text", world.x, world.y);
+                      }
                     }}
                     className="px-3.5 py-2 text-xs font-medium rounded-lg bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/50 border border-violet-200 dark:border-violet-800/50 transition-colors"
                   >
@@ -1473,7 +1528,7 @@ export function Canvas({
         </div>
       )}
 
-      {/* Duplicate + Delete + Layer buttons — tethered to selected element */}
+      {/* Duplicate + Edit (format panel) + Delete + Layer buttons — tethered to selected element */}
       {selectedId && !editingId && selectedElement && selectedElement.type !== "connector" && (() => {
         const el = selectedElement;
         const anchor = worldToScreen(el.x + el.width + 8, el.y - 4);
@@ -1482,6 +1537,17 @@ export function Canvas({
             className="absolute z-20 flex items-center gap-2 flex-wrap"
             style={{ left: anchor.x, top: anchor.y, transform: "translate(0, -50%)" }}
           >
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setFormatPanelOpen((open) => !open);
+              }}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg shadow border whitespace-nowrap ${formatPanelOpen ? "text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 border-blue-200 dark:border-blue-800" : "text-gray-700 dark:text-gray-200 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 border-gray-200 dark:border-gray-700"}`}
+              title="Edit color, text style, rotation"
+            >
+              {formatPanelOpen ? "Close panel" : "Edit"}
+            </button>
             {onDuplicate && (
               <button
                 type="button"
@@ -1618,6 +1684,9 @@ export function Canvas({
         const h = Math.max(lineHeightPx + paddingPx * 2, el.height * zoom);
         const isCodeBlock = el.type === "text" && ((el.properties as Record<string, string>)?.fontFamily === "mono");
         const minH = el.type === "text" ? Math.max(h, 120) : h;
+        const textColor = getElementTextColor(el, isDark);
+        // Code block: solid dark background so light text is readable; stickies: solid color; other text: slight tint
+        const backgroundColor = isCodeBlock ? el.color : isSticky ? el.color : `${el.color}22`;
         return (
           <textarea
             ref={(el) => {
@@ -1631,7 +1700,7 @@ export function Canvas({
             }}
             tabIndex={0}
             aria-label="Edit text"
-            className={`absolute border-2 resize-none outline-none z-[100] focus:ring-2 focus:ring-blue-400 box-border ${isCodeBlock ? "border-blue-600 dark:border-blue-400" : "border-blue-500"}`}
+            className={`absolute border-2 resize-none outline-none z-[100] box-border canvas-inline-edit ${isCodeBlock ? "border-blue-600 dark:border-blue-400" : "border-blue-500"}`}
             style={{
               left: screen.x,
               top: screen.y,
@@ -1648,14 +1717,16 @@ export function Canvas({
               verticalAlign: "top",
               borderRadius: 4,
               ...(isCodeBlock && { borderLeft: `3px solid ${isDark ? "rgb(96 165 250)" : "rgb(37 99 235)"}` }),
-              backgroundColor: isSticky ? el.color : `${el.color}22`,
-              color: getElementTextColor(el, isDark),
+              backgroundColor,
+              color: textColor,
+              caretColor: textColor,
               pointerEvents: "auto",
               overflow: "auto",
             }}
             value={editText}
             onChange={(e) => setEditText(e.target.value)}
             onBlur={saveAndClose}
+            spellCheck={!isCodeBlock}
             onKeyDown={(e) => {
               e.stopPropagation();
               if (e.key === "Escape") saveAndClose();

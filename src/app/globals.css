@@ -40,3 +40,13 @@ select:focus-visible {
   outline: 2px solid rgb(59 130 246);
   outline-offset: 2px;
 }
+
+/* Inline editor on canvas: no thick outline so caret/selection are clear (stickies + code blocks) */
+textarea.canvas-inline-edit {
+  outline: none !important;
+}
+/* Use a thin, visible text selection highlight so it doesn’t look like a huge block cursor */
+textarea.canvas-inline-edit::selection {
+  background-color: rgba(59, 130, 246, 0.35);
+  color: inherit;
+}
