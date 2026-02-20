@@ -45,7 +45,9 @@ const CURSOR_COLORS = [
 ];
 
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-const HANDLE_SIZE_WORLD = 10;
+const HANDLE_SIZE_WORLD = 6;
+/** Hit area for handles (larger than visual for easier grabbing) */
+const HANDLE_HIT_SLOP = 8;
 const MIN_SIZE = 24;
 /** Inset (px) so only elements fully inside the frame bounds are captured */
 const FRAME_INSET = 2;
@@ -73,10 +75,10 @@ function hitTestHandle(
 ): ResizeHandle | null {
   for (const { handle, x, y } of handles) {
     if (
-      worldX >= x - HANDLE_SIZE_WORLD &&
-      worldX <= x + HANDLE_SIZE_WORLD &&
-      worldY >= y - HANDLE_SIZE_WORLD &&
-      worldY <= y + HANDLE_SIZE_WORLD
+      worldX >= x - HANDLE_HIT_SLOP &&
+      worldX <= x + HANDLE_HIT_SLOP &&
+      worldY >= y - HANDLE_HIT_SLOP &&
+      worldY <= y + HANDLE_HIT_SLOP
     )
       return handle;
   }
@@ -247,6 +249,10 @@ function buildCanvasFont(el: BoardElement): string {
   return `${style} ${weight} ${size.canvas}px ${family.canvas}`;
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 export function Canvas({
   elements,
   viewport,
@@ -306,7 +312,11 @@ export function Canvas({
   const [formatPanelOpen, setFormatPanelOpen] = useState(false);
   const [strokePoints, setStrokePoints] = useState<{ x: number; y: number }[]>([]);
   const [isErasing, setIsErasing] = useState(false);
+  const [selectionStart, setSelectionStart] = useState(0);
+  const [caretPosition, setCaretPosition] = useState<{ left: number; top: number; height: number } | null>(null);
+  const [textareaScroll, setTextareaScroll] = useState({ scrollLeft: 0, scrollTop: 0 });
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const measureRef = useRef<HTMLDivElement | null>(null);
   const clipboardRef = useRef<BoardElement[]>([]);
 
   // When board asks to open editor for a newly created text element, do it once it appears
@@ -330,19 +340,52 @@ export function Canvas({
     el.scrollTop = 0;
     el.scrollLeft = 0;
   }, []);
+  // When opening the editor for any shape (sticky, rectangle, circle, text, frame), cursor starts at start
   useLayoutEffect(() => {
     if (!editingId) return;
     editingIdRef.current = editingId;
+    setSelectionStart(0);
+    setTextareaScroll({ scrollLeft: 0, scrollTop: 0 });
     runCursorToTop(editTextareaRef.current);
     const id1 = requestAnimationFrame(() => runCursorToTop(editTextareaRef.current));
     const id2 = requestAnimationFrame(() => runCursorToTop(editTextareaRef.current));
-    const t = setTimeout(() => runCursorToTop(editTextareaRef.current), 0);
+    const t0 = setTimeout(() => runCursorToTop(editTextareaRef.current), 0);
+    const t50 = setTimeout(() => runCursorToTop(editTextareaRef.current), 50);
     return () => {
       cancelAnimationFrame(id1);
       cancelAnimationFrame(id2);
-      clearTimeout(t);
+      clearTimeout(t0);
+      clearTimeout(t50);
     };
   }, [editingId, runCursorToTop]);
+
+  // Measure caret position for thin-caret overlay (1px line instead of native thick caret)
+  useLayoutEffect(() => {
+    if (!editingId || !measureRef.current) {
+      setCaretPosition(null);
+      return;
+    }
+    const el = elements.find((e) => e.id === editingId);
+    if (!el) {
+      setCaretPosition(null);
+      return;
+    }
+    const zoom = viewport.zoom;
+    const elFont = getElementFontSize(el);
+    const lineHeightPx = elFont.lineHeight * zoom;
+    const div = measureRef.current;
+    div.innerHTML = escapeHtml(editText.substring(0, selectionStart)) + '<span data-caret-marker></span>';
+    const span = div.querySelector("[data-caret-marker]");
+    if (span instanceof HTMLElement) {
+      setCaretPosition({
+        left: span.offsetLeft,
+        top: span.offsetTop,
+        height: lineHeightPx,
+      });
+    } else {
+      setCaretPosition(null);
+    }
+  }, [editingId, editText, selectionStart, elements, viewport.zoom]);
 
   // Screen coords → world coords
   const screenToWorld = useCallback(
@@ -630,13 +673,13 @@ export function Canvas({
       const elFrameId = (el.properties as { frameId?: string } | undefined)?.frameId;
       const isFrameChild = elFrameId && elFrameId === selectedId;
 
-      // Selection outline (single or multi)
+      // Selection outline — single thin border (Miro/Figma-style)
       if (el.id === selectedId || selectedIds.has(el.id) || isFrameChild) {
-        ctx.strokeStyle = isFrameChild ? "#818cf8" : "#3b82f6";
-        ctx.lineWidth = 1.5 / viewport.zoom;
+        ctx.strokeStyle = isFrameChild ? "#818cf8" : (isDark ? "#60a5fa" : "#3b82f6");
+        ctx.lineWidth = 1 / viewport.zoom;
         ctx.setLineDash(isFrameChild || (selectedIds.has(el.id) && el.id !== selectedId) ? [4 / viewport.zoom, 3 / viewport.zoom] : []);
         ctx.beginPath();
-        ctx.roundRect(x - 3, y - 3, width + 6, height + 6, 6);
+        ctx.roundRect(x - 2, y - 2, width + 4, height + 4, 4);
         ctx.stroke();
         ctx.setLineDash([]);
       }
@@ -817,16 +860,16 @@ export function Canvas({
       ctx.restore();
     }
 
-    // Resize handles (when selected and not resizing; only for non-connector, non-freehand elements)
+    // Resize handles — small, subtle (Miro/Figma-style)
     if (selectedId && !resizing) {
       const el = elements.find((e) => e.id === selectedId);
       if (el && el.type !== "connector" && el.type !== "freehand") {
         const handles = getResizeHandles(el);
-        ctx.fillStyle = "#3b82f6";
-        ctx.strokeStyle = isDark ? "#1f2937" : "#fff";
-        ctx.lineWidth = 2 / viewport.zoom;
+        const r = HANDLE_SIZE_WORLD / 2;
+        ctx.fillStyle = isDark ? "#1e293b" : "#fff";
+        ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6";
+        ctx.lineWidth = 1 / viewport.zoom;
         for (const { x: hx, y: hy } of handles) {
-          const r = HANDLE_SIZE_WORLD / 2;
           ctx.beginPath();
           ctx.arc(hx, hy, r, 0, Math.PI * 2);
           ctx.fill();
@@ -1687,57 +1730,98 @@ export function Canvas({
         const textColor = getElementTextColor(el, isDark);
         // Code block: solid dark background so light text is readable; stickies: solid color; other text: slight tint
         const backgroundColor = isCodeBlock ? el.color : isSticky ? el.color : `${el.color}22`;
+        const measureStyle = {
+          position: "absolute" as const,
+          left: -9999,
+          top: 0,
+          width: w,
+          padding: paddingPx,
+          fontSize,
+          lineHeight: lineHeightPx,
+          fontFamily: elFF.css,
+          fontWeight,
+          fontStyle,
+          textAlign,
+          whiteSpace: "pre-wrap" as const,
+          overflow: "hidden",
+          visibility: "hidden" as const,
+          margin: 0,
+          border: "none",
+          boxSizing: "border-box" as const,
+        };
         return (
-          <textarea
-            ref={(el) => {
-              editTextareaRef.current = el;
-              if (el && editingId) {
-                el.focus();
-                el.setSelectionRange(0, 0);
-                el.scrollTop = 0;
-                el.scrollLeft = 0;
-              }
-            }}
-            tabIndex={0}
-            aria-label="Edit text"
-            className={`absolute border-2 resize-none outline-none z-[100] box-border canvas-inline-edit ${isCodeBlock ? "border-blue-600 dark:border-blue-400" : "border-blue-500"}`}
-            style={{
-              left: screen.x,
-              top: screen.y,
-              width: w,
-              height: minH,
-              minHeight: el.type === "text" ? 120 : undefined,
-              padding: paddingPx,
-              fontSize,
-              lineHeight: lineHeightPx,
-              fontFamily: elFF.css,
-              fontWeight,
-              fontStyle,
-              textAlign,
-              verticalAlign: "top",
-              borderRadius: 4,
-              ...(isCodeBlock && { borderLeft: `3px solid ${isDark ? "rgb(96 165 250)" : "rgb(37 99 235)"}` }),
-              backgroundColor,
-              color: textColor,
-              caretColor: textColor,
-              pointerEvents: "auto",
-              overflow: "auto",
-            }}
-            value={editText}
-            onChange={(e) => setEditText(e.target.value)}
-            onBlur={saveAndClose}
-            spellCheck={!isCodeBlock}
-            onKeyDown={(e) => {
-              e.stopPropagation();
-              if (e.key === "Escape") saveAndClose();
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                saveAndClose();
-              }
-            }}
-            onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-          />
+          <div className="absolute z-[100]" style={{ left: screen.x, top: screen.y, width: w, height: minH }}>
+            {/* Hidden measure div for thin-caret position (same font/size as textarea) */}
+            <div ref={measureRef} style={measureStyle} />
+            <textarea
+              ref={(ta) => {
+                editTextareaRef.current = ta;
+                if (ta) {
+                  ta.focus();
+                  ta.setSelectionRange(0, 0);
+                  ta.scrollTop = 0;
+                  ta.scrollLeft = 0;
+                }
+              }}
+              tabIndex={0}
+              aria-label="Edit text"
+              className={`absolute inset-0 resize-none outline-none box-border canvas-inline-edit border ${isCodeBlock ? "border-blue-600 dark:border-blue-400" : "border-blue-500 dark:border-blue-400"}`}
+              style={{
+                padding: paddingPx,
+                fontSize,
+                lineHeight: lineHeightPx,
+                fontFamily: elFF.css,
+                fontWeight,
+                fontStyle,
+                textAlign,
+                verticalAlign: "top",
+                borderRadius: 4,
+                ...(isCodeBlock && { borderLeft: `3px solid ${isDark ? "rgb(96 165 250)" : "rgb(37 99 235)"}` }),
+                backgroundColor,
+                color: textColor,
+                caretColor: "transparent",
+                pointerEvents: "auto",
+                overflow: "auto",
+              }}
+              value={editText}
+              onChange={(e) => {
+                setEditText(e.target.value);
+                setSelectionStart(e.target.selectionStart ?? 0);
+              }}
+              onSelect={(e) => setSelectionStart(e.currentTarget.selectionStart)}
+              onScroll={(e) => setTextareaScroll({ scrollLeft: e.currentTarget.scrollLeft, scrollTop: e.currentTarget.scrollTop })}
+              onBlur={saveAndClose}
+              spellCheck={!isCodeBlock}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Escape") saveAndClose();
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  saveAndClose();
+                }
+              }}
+              onKeyUp={(e) => setSelectionStart(e.currentTarget.selectionStart)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectionStart(e.currentTarget.selectionStart);
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+            />
+            {/* Thin 1px caret overlay (Miro/Figma-style) */}
+            {caretPosition && (
+              <div
+                aria-hidden
+                className="caret-blink pointer-events-none absolute"
+                style={{
+                  left: paddingPx + caretPosition.left - textareaScroll.scrollLeft,
+                  top: paddingPx + caretPosition.top - textareaScroll.scrollTop,
+                  width: 1,
+                  height: caretPosition.height,
+                  backgroundColor: textColor,
+                }}
+              />
+            )}
+          </div>
         );
       })()}
     </div>

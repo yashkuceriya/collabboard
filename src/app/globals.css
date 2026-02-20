@@ -50,3 +50,12 @@ textarea.canvas-inline-edit::selection {
   background-color: rgba(59, 130, 246, 0.35);
   color: inherit;
 }
+
+/* Thin caret blink (used by canvas inline editor overlay) */
+@keyframes caret-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+.caret-blink {
+  animation: caret-blink 1s step-end infinite;
+}
