@@ -112,13 +112,13 @@ export default function BoardPage() {
   }
 
   // Real-time element sync (postgres_changes + broadcast fallback for add/delete)
-  const { broadcastElement, broadcastElementUpdated, broadcastElementDeleted } = useRealtimeElements(
+  const { broadcastElement, broadcastElementUpdated, broadcastElementDeleted, syncLatencyRef } = useRealtimeElements(
     boardId,
     setElements
   );
 
   // Presence (cursors + who's online)
-  const { peers, broadcastCursor } = usePresence(boardId, user);
+  const { peers, broadcastCursor, cursorLatency: cursorLatencyRef } = usePresence(boardId, user);
 
   // Board chat (messages between users on this board)
   const { messages: chatMessages, loading: chatLoading, sendMessage } = useBoardChat(boardId, user);
@@ -696,6 +696,8 @@ export default function BoardPage() {
         perfMode={perfMode}
         interviewMode={interviewMode}
         onInsertCodeBlock={interviewMode ? () => { void insertCodeBlock(); } : undefined}
+        cursorLatencyRef={cursorLatencyRef}
+        syncLatencyRef={syncLatencyRef}
       />
     </div>
   );

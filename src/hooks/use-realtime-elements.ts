@@ -30,6 +30,7 @@ export function useRealtimeElements(boardId: string, setElements: SetElements) {
   const setElementsRef = useRef(setElements);
   useEffect(() => { setElementsRef.current = setElements; });
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const syncLatencyRef = useRef<number | null>(null);
 
   const addToState = useCallback((newEl: BoardElement) => {
     setElementsRef.current((prev) => {
@@ -95,8 +96,8 @@ export function useRealtimeElements(boardId: string, setElements: SetElements) {
           ? (payload as { payload: Record<string, unknown> }).payload
           : payload) as Record<string, unknown>;
         if (raw?.id) {
-          if (typeof raw._ts === "number" && typeof window !== "undefined" && window.location.search.includes("perf=1")) {
-            console.log("[perf] object sync latency (ms):", Date.now() - raw._ts);
+          if (typeof raw._ts === "number") {
+            syncLatencyRef.current = Date.now() - raw._ts;
           }
           const { _ts: _, ...rest } = raw;
           addToState(normalizeRow(rest));
@@ -107,8 +108,8 @@ export function useRealtimeElements(boardId: string, setElements: SetElements) {
           ? (payload as { payload: Record<string, unknown> }).payload
           : payload) as Record<string, unknown>;
         if (raw?.id) {
-          if (typeof raw._ts === "number" && typeof window !== "undefined" && window.location.search.includes("perf=1")) {
-            console.log("[perf] object sync (update) latency (ms):", Date.now() - raw._ts);
+          if (typeof raw._ts === "number") {
+            syncLatencyRef.current = Date.now() - raw._ts;
           }
           const { _ts: __, ...rest } = raw;
           const updated = normalizeRow(rest);
@@ -178,5 +179,5 @@ export function useRealtimeElements(boardId: string, setElements: SetElements) {
     []
   );
 
-  return { broadcastElement, broadcastElementUpdated, broadcastElementDeleted };
+  return { broadcastElement, broadcastElementUpdated, broadcastElementDeleted, syncLatencyRef };
 }

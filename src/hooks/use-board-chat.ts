@@ -27,11 +27,11 @@ export function useBoardChat(boardId: string | null, user: { id: string; email?:
         .from("board_chat_messages")
         .select("*")
         .eq("board_id", boardId)
-        .order("created_at", { ascending: true })
+        .order("created_at", { ascending: false })
         .limit(PAGE_SIZE);
 
       if (cancelled) return;
-      if (!error) setMessages((data as BoardChatMessage[]) ?? []);
+      if (!error) setMessages(((data as BoardChatMessage[]) ?? []).reverse());
       setLoading(false);
     })();
 
