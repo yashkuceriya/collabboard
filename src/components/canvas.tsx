@@ -1757,14 +1757,7 @@ export function Canvas({
             <div ref={measureRef} style={measureStyle} />
             <textarea
               ref={(ta) => {
-                const isNew = ta && editTextareaRef.current !== ta;
                 editTextareaRef.current = ta;
-                if (ta && isNew) {
-                  ta.focus();
-                  ta.setSelectionRange(0, 0);
-                  ta.scrollTop = 0;
-                  ta.scrollLeft = 0;
-                }
               }}
               tabIndex={0}
               aria-label="Edit text"
