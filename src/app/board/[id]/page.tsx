@@ -86,6 +86,23 @@ export default function BoardPage() {
     init();
   }, [boardId, router]);
 
+  // Redeem share link when visiting with ?invite=TOKEN
+  const inviteToken = searchParams.get("invite");
+  useEffect(() => {
+    if (loading || !user || !accessToken || !inviteToken) return;
+    let cancelled = false;
+    (async () => {
+      const res = await fetch(`/api/boards/${boardId}/join`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: inviteToken, accessToken }),
+      });
+      if (cancelled) return;
+      if (res.ok) router.replace(`/board/${boardId}`, { scroll: false });
+    })();
+    return () => { cancelled = true; };
+  }, [loading, user, accessToken, inviteToken, boardId, router]);
+
   async function saveBoardName(name: string) {
     const trimmed = name.trim();
     if (!trimmed) { setEditingName(false); return; }

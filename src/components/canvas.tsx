@@ -2,7 +2,6 @@
 
 import { useRef, useEffect, useLayoutEffect, useCallback, useState } from "react";
 import { useTheme } from "@/components/theme-provider";
-import { ColorPicker } from "@/components/color-picker";
 import { FormatPanel } from "@/components/format-panel";
 import type { BoardElement, Json } from "@/lib/types/database";
 import type { Peer } from "@/hooks/use-presence";
@@ -1234,7 +1233,8 @@ export function Canvas({
   const selectedElement = selectedId ? elements.find((e) => e.id === selectedId) : null;
   useEffect(() => {
     if (!selectedId) setFormatPanelOpen(false);
-  }, [selectedId]);
+    else if (selectedElement && selectedElement.type !== "connector") setFormatPanelOpen(true);
+  }, [selectedId, selectedElement]);
   const canDeleteSelected =
     selectedId &&
     !editingId &&
@@ -1551,72 +1551,7 @@ export function Canvas({
         );
       })()}
 
-      {/* Color picker — to the right of selected element so it doesn't cover content (not for connectors) */}
-      {selectedId && !editingId && showColorPicker && (() => {
-        const el = selectedElement!;
-        const anchor = worldToScreen(el.x + el.width + 16, el.y + el.height / 2);
-        const props = el.properties as Record<string, string> | undefined;
-        const currentTextColor = props?.textColor || "";
-        const currentFontSize = (props?.fontSize || "medium") as "small" | "medium" | "large" | "xl";
-        const currentFontFamily = (props?.fontFamily || "sans") as "sans" | "serif" | "mono" | "hand";
-        const currentFontWeight = (props?.fontWeight === "bold" ? "bold" : "normal") as "normal" | "bold";
-        const currentFontStyle = (props?.fontStyle === "italic" ? "italic" : "normal") as "normal" | "italic";
-        const currentTextAlign = (props?.textAlign === "center" || props?.textAlign === "right" ? props.textAlign : "left") as "left" | "center" | "right";
-        const mergeProps = (patch: Record<string, unknown>) => {
-          const existingProps = (el.properties as Record<string, unknown>) || {};
-          onUpdate(el.id, { properties: { ...existingProps, ...patch } as BoardElement["properties"] });
-        };
-        return (
-          <div
-            className="absolute z-30"
-            style={{
-              left: anchor.x,
-              top: anchor.y,
-              transform: "translate(0, -50%)",
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <ColorPicker
-                currentColor={el.color}
-                elementType={el.type as "sticky_note" | "rectangle" | "circle" | "text"}
-                onColorChange={(color) => onUpdate(el.id, { color })}
-                textColor={currentTextColor}
-                onTextColorChange={(textColor) => mergeProps({ textColor })}
-                fontSize={currentFontSize}
-                onFontSizeChange={(fontSize) => mergeProps({ fontSize })}
-                fontFamily={currentFontFamily}
-                onFontFamilyChange={(fontFamily) => mergeProps({ fontFamily })}
-                fontWeight={currentFontWeight}
-                onFontWeightChange={(fontWeight) => mergeProps({ fontWeight })}
-                fontStyle={currentFontStyle}
-                onFontStyleChange={(fontStyle) => mergeProps({ fontStyle })}
-                {...(el.type !== "circle" && {
-                  textAlign: currentTextAlign,
-                  onTextAlignChange: (textAlign: "left" | "center" | "right") => mergeProps({ textAlign }),
-                })}
-              />
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setFormatPanelOpen(true);
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-                className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600 flex items-center gap-1.5"
-                title="Open format panel"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 3v18M3 12h18" />
-                  <path d="M7 7h.01M7 17h.01M17 7h.01M17 17h.01" />
-                </svg>
-                Panel
-              </button>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Slide-out Format panel — full controls when an element is selected */}
+      {/* Slide-out Format panel — full controls when an element is selected (no floating box) */}
       {formatPanelOpen && selectedId && !editingId && showColorPicker && selectedElement && (() => {
         const el = selectedElement;
         const props = el.properties as Record<string, string> | undefined;
