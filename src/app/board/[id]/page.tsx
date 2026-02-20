@@ -695,7 +695,7 @@ export default function BoardPage() {
         onOpenEditorFulfilled={() => setOpenEditorForId(null)}
         perfMode={perfMode}
         interviewMode={interviewMode}
-        onInsertCodeBlock={interviewMode ? insertCodeBlock : undefined}
+        onInsertCodeBlock={interviewMode ? () => { void insertCodeBlock(); } : undefined}
       />
     </div>
   );

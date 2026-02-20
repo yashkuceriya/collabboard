@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useLayoutEffect, useCallback, useState } from "react";
+import { useRef, useEffect, useLayoutEffect, useCallback, useState, useMemo } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { FormatPanel } from "@/components/format-panel";
 import type { BoardElement, Json } from "@/lib/types/database";
