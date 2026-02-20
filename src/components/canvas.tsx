@@ -3,6 +3,7 @@
 import { useRef, useEffect, useLayoutEffect, useCallback, useState, useMemo } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { FormatPanel } from "@/components/format-panel";
+import { PerfPanel } from "@/components/perf-panel";
 import type { BoardElement, Json } from "@/lib/types/database";
 import type { Peer } from "@/hooks/use-presence";
 
@@ -36,6 +37,10 @@ interface CanvasProps {
   interviewMode?: boolean;
   /** When provided (e.g. interview mode), empty-state "Code Block" calls this instead of creating a small text */
   onInsertCodeBlock?: () => void | Promise<void>;
+  /** Ref for cursor sync latency (ms) — from usePresence */
+  cursorLatencyRef?: React.RefObject<number | null>;
+  /** Ref for object sync latency (ms) — from useRealtimeElements */
+  syncLatencyRef?: React.RefObject<number | null>;
 }
 
 // Color name labels for cursors
@@ -276,10 +281,12 @@ export function Canvas({
   perfMode = false,
   interviewMode = false,
   onInsertCodeBlock,
+  cursorLatencyRef,
+  syncLatencyRef,
 }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const drawCountRef = useRef(0);
+  // FPS state updated by the continuous rAF loop
   const [fps, setFps] = useState(0);
   const { effective: themeMode } = useTheme();
   const isDark = themeMode === "dark";
@@ -398,6 +405,19 @@ export function Canvas({
     [viewport]
   );
 
+  // Memoized sorted elements: frames first, then shapes, connectors skipped in draw loop
+  const sortedElements = useMemo(
+    () => [...elements].sort((a, b) => {
+      if (a.type === "frame" && b.type !== "frame") return -1;
+      if (a.type !== "frame" && b.type === "frame") return 1;
+      return 0;
+    }),
+    [elements]
+  );
+
+  // Track visible count for perf panel
+  const visibleCountRef = useRef(0);
+
   // Hit test: find element at screen position (shapes first, then connectors by distance to line)
   const spatialIndex = useMemo(
     () => (elements.length > SPATIAL_INDEX_THRESHOLD ? buildSpatialIndex(elements) : null),
@@ -453,9 +473,13 @@ export function Canvas({
 
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
+    const newW = Math.round(rect.width * dpr);
+    const newH = Math.round(rect.height * dpr);
+    if (canvas.width !== newW || canvas.height !== newH) {
+      canvas.width = newW;
+      canvas.height = newH;
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // Clear
     ctx.clearRect(0, 0, rect.width, rect.height);
@@ -475,12 +499,11 @@ export function Canvas({
 
     {
       ctx.fillStyle = isDark ? "#374151" : "#d1d5db";
-      const dotRadius = (isDark ? 1.2 : 1) / viewport.zoom;
+      const dotSize = (isDark ? 2 : 1.5) / viewport.zoom;
+      const half = dotSize / 2;
       for (let gx = startX; gx < endX; gx += gridSize) {
         for (let gy = startY; gy < endY; gy += gridSize) {
-          ctx.beginPath();
-          ctx.arc(gx, gy, dotRadius, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.fillRect(gx - half, gy - half, dotSize, dotSize);
         }
       }
     }
@@ -494,11 +517,7 @@ export function Canvas({
       ex + ew >= vx && ex <= vx + vw && ey + eh >= vy && ey <= vy + vh;
 
     // Draw frames first (behind other elements), then non-frames, then connectors
-    const sortedElements = [...elements].sort((a, b) => {
-      if (a.type === "frame" && b.type !== "frame") return -1;
-      if (a.type !== "frame" && b.type === "frame") return 1;
-      return 0;
-    });
+    let visibleDrawn = 0;
     for (const el of sortedElements) {
       if (el.type === "connector") continue;
       const bounds =
@@ -507,6 +526,7 @@ export function Canvas({
           : { x: el.x, y: el.y, width: el.width, height: el.height };
       const { x, y, width, height } = bounds;
       if (!inView(x, y, width, height)) continue;
+      visibleDrawn++;
 
       ctx.save();
 
@@ -903,33 +923,47 @@ export function Canvas({
       ctx.fillText(name, screen.x + 14, screen.y + 25);
       ctx.restore();
     });
-    if (perfMode) drawCountRef.current++;
-  }, [elements, viewport, selectedId, selectedIds, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, perfMode, idToElement]);
+    visibleCountRef.current = visibleDrawn;
+  }, [elements, sortedElements, viewport, selectedId, selectedIds, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, perfMode, idToElement]);
 
-  // FPS sampling when perf mode is on
+  // Continuous rAF render loop — runs at display refresh rate (60/120 Hz)
+  // like Miro/Figma for maximum responsiveness and accurate FPS measurement
+  const fpsRef = useRef(0);
+  const drawRef = useRef(draw);
+  drawRef.current = draw;
   useEffect(() => {
-    if (!perfMode) return;
-    const id = setInterval(() => {
-      setFps(drawCountRef.current);
-      drawCountRef.current = 0;
-    }, 1000);
-    return () => clearInterval(id);
-  }, [perfMode]);
+    let running = true;
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
 
-  // Redraw when state changes (no continuous rAF loop)
-  useEffect(() => {
-    const raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
-  }, [draw]);
+    function loop() {
+      if (!running) return;
+      drawRef.current();
+      frameCount++;
 
-  // Resize observer
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        fpsRef.current = frameCount;
+        setFps(frameCount);
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+
+      requestAnimationFrame(loop);
+    }
+
+    requestAnimationFrame(loop);
+    return () => { running = false; };
+  }, []);
+
+  // Resize observer — stable (uses ref so it never re-attaches)
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const ro = new ResizeObserver(() => requestAnimationFrame(draw));
+    const ro = new ResizeObserver(() => requestAnimationFrame(() => drawRef.current()));
     ro.observe(container);
     return () => ro.disconnect();
-  }, [draw]);
+  }, []);
 
   // Mouse handlers
   function handleMouseDown(e: React.MouseEvent) {
@@ -1419,11 +1453,17 @@ export function Canvas({
 
   return (
     <div ref={containerRef} className="flex-1 relative" tabIndex={0} onKeyDown={handleKeyDown}>
-      {/* Perf overlay: FPS (add ?perf=1 to board URL) */}
+      {/* Performance panel (add ?perf=1 to board URL) */}
       {perfMode && (
-        <div className="absolute top-3 left-3 z-50 px-2.5 py-1.5 rounded-lg bg-gray-900/90 text-green-400 font-mono text-sm tabular-nums">
-          FPS: {fps}
-        </div>
+        <PerfPanel metrics={{
+          fps,
+          elementCount: elements.length,
+          visibleCount: visibleCountRef.current,
+          peerCount: peers.length,
+          cursorLatency: cursorLatencyRef?.current ?? null,
+          syncLatency: syncLatencyRef?.current ?? null,
+          spatialIndexActive: spatialIndex !== null,
+        }} />
       )}
       {/* Connector tool hint — makes it clear arrows connect shapes */}
       {tool === "connector" && (

@@ -60,9 +60,13 @@ export function usePresence(boardId: string, user: User | null) {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const subscribedRef = useRef(false);
   const userRef = useRef(user);
-  useEffect(() => { userRef.current = user; });
+  useEffect(() => { userRef.current = user; }, [user]);
   const presenceListRef = useRef<Omit<Peer, "cursor_x" | "cursor_y">[]>([]);
   const cursorMapRef = useRef<Record<string, { x: number; y: number }>>({});
+  const cursorDirtyRef = useRef(false);
+  const rafIdRef = useRef(0);
+  const cursorLatencyRef = useRef<number | null>(null);
+  const pendingCursorRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     if (!boardId || typeof boardId !== "string" || boardId === "undefined" || !user) {
@@ -92,10 +96,25 @@ export function usePresence(boardId: string, user: User | null) {
         setPeers(mergePeers(presenceListRef.current, cursorMapRef.current));
       };
 
+      // Batch cursor updates into a single rAF frame (avoids N re-renders/sec with N peers)
+      const scheduleCursorFlush = () => {
+        if (cursorDirtyRef.current) return;
+        cursorDirtyRef.current = true;
+        rafIdRef.current = requestAnimationFrame(() => {
+          cursorDirtyRef.current = false;
+          flushPeers();
+        });
+      };
+
       const updatePresence = () => {
         const u = userRef.current;
         if (u) {
           presenceListRef.current = buildPresenceList(channel, u.id);
+          // Clean up stale cursors for users who left
+          const activeIds = new Set(presenceListRef.current.map((p) => p.user_id));
+          for (const id of Object.keys(cursorMapRef.current)) {
+            if (!activeIds.has(id)) delete cursorMapRef.current[id];
+          }
           flushPeers();
         }
       };
@@ -109,15 +128,11 @@ export function usePresence(boardId: string, user: User | null) {
             ? (payload as { payload: CursorPayload }).payload
             : payload) as CursorPayload;
           if (p?.user_id != null && typeof p.x === "number" && typeof p.y === "number") {
-            if (typeof p.ts === "number" && typeof window !== "undefined" && window.location.search.includes("perf=1")) {
-              const latency = Date.now() - p.ts;
-              console.log("[perf] cursor sync latency (ms):", latency);
+            if (typeof p.ts === "number") {
+              cursorLatencyRef.current = Date.now() - p.ts;
             }
-            cursorMapRef.current = {
-              ...cursorMapRef.current,
-              [p.user_id]: { x: p.x, y: p.y },
-            };
-            flushPeers();
+            cursorMapRef.current[p.user_id] = { x: p.x, y: p.y };
+            scheduleCursorFlush();
           }
         })
         .subscribe(async (status) => {
@@ -140,6 +155,8 @@ export function usePresence(boardId: string, user: User | null) {
       subscribedRef.current = false;
       presenceListRef.current = [];
       cursorMapRef.current = {};
+      cancelAnimationFrame(rafIdRef.current);
+      cursorDirtyRef.current = false;
       const ch = channelRef.current;
       channelRef.current = null;
       if (ch) ch.unsubscribe();
@@ -149,28 +166,40 @@ export function usePresence(boardId: string, user: User | null) {
   }, [boardId, user?.id]);
 
   const lastSend = useRef(0);
+  const trailingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const CURSOR_BROADCAST_MS = 50;
-  const broadcastCursor = useCallback(
+
+  const sendCursor = useCallback(
     (x: number, y: number) => {
       if (!subscribedRef.current || !channelRef.current || !user) return;
-      const now = Date.now();
-      if (now - lastSend.current < CURSOR_BROADCAST_MS) return;
-      lastSend.current = now;
-
+      lastSend.current = Date.now();
       channelRef.current.send({
         type: "broadcast",
         event: "cursor",
-        payload: {
-          user_id: user.id,
-          user_email: user.email ?? "Anonymous",
-          x,
-          y,
-          ts: now,
-        },
+        payload: { user_id: user.id, x, y, ts: Date.now() },
       });
     },
     [user]
   );
 
-  return { peers, broadcastCursor };
+  // Leading + trailing edge throttle so the final position is always sent
+  const broadcastCursor = useCallback(
+    (x: number, y: number) => {
+      pendingCursorRef.current = { x, y };
+      const now = Date.now();
+      if (now - lastSend.current >= CURSOR_BROADCAST_MS) {
+        if (trailingTimerRef.current) { clearTimeout(trailingTimerRef.current); trailingTimerRef.current = null; }
+        sendCursor(x, y);
+      } else if (!trailingTimerRef.current) {
+        trailingTimerRef.current = setTimeout(() => {
+          trailingTimerRef.current = null;
+          const p = pendingCursorRef.current;
+          if (p) sendCursor(p.x, p.y);
+        }, CURSOR_BROADCAST_MS - (now - lastSend.current));
+      }
+    },
+    [sendCursor]
+  );
+
+  return { peers, broadcastCursor, cursorLatency: cursorLatencyRef };
 }
