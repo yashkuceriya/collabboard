@@ -123,6 +123,7 @@ export async function POST(req: Request) {
 
   const result = streamFn({
     model: openai("gpt-4o-mini"),
+    maxOutputTokens: 1024,
     ...(client && {
       providerOptions: {
         langsmith: createLangSmithProviderOptions({
@@ -173,9 +174,11 @@ Guidelines:
 - For brainstorming, create 4-8 sticky notes with distinct ideas using generateIdeas.
 - When summarizing the board, always create a sticky note with the summary text so the user sees it on the board; then briefly confirm in your reply.
 - Default sticky note colors: #FFEB3B (yellow), #FF9800 (orange), #F48FB1 (pink), #CE93D8 (purple), #90CAF9 (blue), #80CBC4 (teal), #A5D6A7 (green).
-- Always ensure text on stickies and text elements is readable: use dark text on light backgrounds and light text on dark backgrounds. The server sets textColor automatically, but prefer light background colors (the defaults above) so text is always clearly visible.`,
+- Always ensure text on stickies and text elements is readable: use dark text on light backgrounds and light text on dark backgrounds. The server sets textColor automatically, but prefer light background colors (the defaults above) so text is always clearly visible.
+
+LATENCY: Prefer fewer tool rounds. For "add 3 stickies", "add N sticky notes about X", or any request to add multiple stickies (2–8), use generateIdeas ONCE with topic and the list of texts — do NOT call createStickyNote multiple times. Only call getBoardState when you need element ids (e.g. to move, connect, delete, or summarize); for simple "add stickies" use generateIdeas without getBoardState.`,
     messages: modelMessages,
-    stopWhen: stepCountIs(5),
+    stopWhen: stepCountIs(3),
     tools: {
       getBoardState: tool({
         description: "Get the current list of all elements on the board (id, type, x, y, width, height, color, text). Use this to understand what's on the board before making changes.",
@@ -404,10 +407,10 @@ Guidelines:
         },
       }),
       generateIdeas: tool({
-        description: "Generate multiple sticky notes with brainstormed ideas on a topic. Creates 4-8 color-coded notes arranged in a grid inside a frame. Places the grid so it does not overlap existing elements. Use when the user asks to brainstorm, generate ideas, or wants suggestions.",
+        description: "Create multiple sticky notes in ONE call (fast). Use for ANY request to add 2+ sticky notes: e.g. 'add 3 stickies about X', 'add sticky notes for ideas', 'brainstorm Y'. Creates 1-8 color-coded notes in a frame with spacing. Do NOT use createStickyNote multiple times — use this once with topic and ideas array.",
         inputSchema: z.object({
-          topic: z.string().describe("The topic to brainstorm about"),
-          ideas: z.array(z.string()).describe("Array of idea texts, 4-8 items; every item must have visible text"),
+          topic: z.string().describe("The topic or title for the frame"),
+          ideas: z.array(z.string()).describe("Array of 1-8 idea texts (one per sticky); every item must have visible text"),
         }),
         execute: async ({ topic, ideas }) => {
           const colors = ["#FFEB3B", "#FF9800", "#F48FB1", "#CE93D8", "#90CAF9", "#80CBC4", "#A5D6A7", "#E8F5E9"];
@@ -449,30 +452,31 @@ Guidelines:
 
           const created: string[] = [];
           if (frameId) created.push(frameId);
-          for (let i = 0; i < list.length; i++) {
+          const stickies = list.map((text, i) => {
             const col = i % cols;
             const row = Math.floor(i / cols);
             const x = start.x + pad + col * cellW;
             const y = start.y + pad + 32 + row * (stickyH + gap);
             const bg = colors[i % colors.length];
-            const text = list[i];
-            const { data, error } = await supabase
-              .from("board_elements")
-              .insert({
-                board_id: boardId,
-                type: "sticky_note",
-                x,
-                y,
-                width: stickyW,
-                height: stickyH,
-                color: bg,
-                text,
-                properties: { textColor: contrastTextColor(bg), textAlign: "left", frameId },
-                created_by: userId,
-              } as never)
-              .select("id")
-              .single();
-            if (!error && data) created.push((data as { id: string }).id);
+            return {
+              board_id: boardId,
+              type: "sticky_note" as const,
+              x,
+              y,
+              width: stickyW,
+              height: stickyH,
+              color: bg,
+              text,
+              properties: { textColor: contrastTextColor(bg), textAlign: "left", frameId },
+              created_by: userId,
+            };
+          });
+          const { data: stickyRows, error } = await supabase
+            .from("board_elements")
+            .insert(stickies as never)
+            .select("id");
+          if (!error && stickyRows) {
+            for (const row of stickyRows as { id: string }[]) created.push(row.id);
           }
           return { created, count: created.length };
         },
