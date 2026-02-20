@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { useTheme } from "@/components/theme-provider";
 import type { BoardElement } from "@/lib/types/database";
 
 const PREVIEW_W = 280;
@@ -11,6 +12,8 @@ const MAX_ELEMENTS = 40;
 export function BoardPreview({ boardId }: { boardId: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [elements, setElements] = useState<BoardElement[]>([]);
+  const { effective: themeMode } = useTheme();
+  const isDark = themeMode === "dark";
 
   useEffect(() => {
     let cancelled = false;
@@ -75,7 +78,7 @@ export function BoardPreview({ boardId }: { boardId: string }) {
     const tx = pad - minX * scale;
     const ty = pad - minY * scale;
 
-    ctx.fillStyle = "#fafafa";
+    ctx.fillStyle = isDark ? "#111827" : "#fafafa";
     ctx.fillRect(0, 0, PREVIEW_W, PREVIEW_H);
     for (const el of nonConnector) {
       const x = el.x * scale + tx;
@@ -107,9 +110,21 @@ export function BoardPreview({ boardId }: { boardId: string }) {
         ctx.moveTo(x, y);
         ctx.lineTo(x2, y2);
         ctx.stroke();
+      } else if (el.type === "freehand") {
+        const pts = (el.properties as { points?: { x: number; y: number }[] })?.points;
+        if (pts && pts.length >= 2) {
+          ctx.strokeStyle = el.color;
+          ctx.lineWidth = Math.max(1, 2 * scale);
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x * scale + tx, pts[0].y * scale + ty);
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x * scale + tx, pts[i].y * scale + ty);
+          ctx.stroke();
+        }
       }
     }
-  }, [elements]);
+  }, [elements, isDark]);
 
   return (
     <canvas

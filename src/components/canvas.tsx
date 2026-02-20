@@ -250,7 +250,7 @@ function buildCanvasFont(el: BoardElement): string {
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
 }
 
 export function Canvas({
@@ -340,7 +340,8 @@ export function Canvas({
     el.scrollTop = 0;
     el.scrollLeft = 0;
   }, []);
-  // When opening the editor for any shape (sticky, rectangle, circle, text, frame), cursor starts at start
+  // When opening the editor for any shape (sticky, rectangle, circle, text, frame), cursor starts at start.
+  // Only run once on open; delayed runs are not used so we don't reset the cursor after the user types.
   useLayoutEffect(() => {
     if (!editingId) return;
     editingIdRef.current = editingId;
@@ -348,15 +349,7 @@ export function Canvas({
     setTextareaScroll({ scrollLeft: 0, scrollTop: 0 });
     runCursorToTop(editTextareaRef.current);
     const id1 = requestAnimationFrame(() => runCursorToTop(editTextareaRef.current));
-    const id2 = requestAnimationFrame(() => runCursorToTop(editTextareaRef.current));
-    const t0 = setTimeout(() => runCursorToTop(editTextareaRef.current), 0);
-    const t50 = setTimeout(() => runCursorToTop(editTextareaRef.current), 50);
-    return () => {
-      cancelAnimationFrame(id1);
-      cancelAnimationFrame(id2);
-      clearTimeout(t0);
-      clearTimeout(t50);
-    };
+    return () => cancelAnimationFrame(id1);
   }, [editingId, runCursorToTop]);
 
   // Measure caret position for thin-caret overlay (1px line instead of native thick caret)
@@ -673,13 +666,15 @@ export function Canvas({
       const elFrameId = (el.properties as { frameId?: string } | undefined)?.frameId;
       const isFrameChild = elFrameId && elFrameId === selectedId;
 
-      // Selection outline — single thin border (Miro/Figma-style)
+      // Selection outline — single thin border (Miro/Figma-style, constant screen-space thickness)
       if (el.id === selectedId || selectedIds.has(el.id) || isFrameChild) {
+        const gap = 2 / viewport.zoom;
+        const cornerR = 4 / viewport.zoom;
         ctx.strokeStyle = isFrameChild ? "#818cf8" : (isDark ? "#60a5fa" : "#3b82f6");
         ctx.lineWidth = 1 / viewport.zoom;
         ctx.setLineDash(isFrameChild || (selectedIds.has(el.id) && el.id !== selectedId) ? [4 / viewport.zoom, 3 / viewport.zoom] : []);
         ctx.beginPath();
-        ctx.roundRect(x - 2, y - 2, width + 4, height + 4, 4);
+        ctx.roundRect(x - gap, y - gap, width + gap * 2, height + gap * 2, cornerR);
         ctx.stroke();
         ctx.setLineDash([]);
       }
@@ -860,12 +855,12 @@ export function Canvas({
       ctx.restore();
     }
 
-    // Resize handles — small, subtle (Miro/Figma-style)
+    // Resize handles — small, constant screen-space size (Miro/Figma-style)
     if (selectedId && !resizing) {
       const el = elements.find((e) => e.id === selectedId);
       if (el && el.type !== "connector" && el.type !== "freehand") {
         const handles = getResizeHandles(el);
-        const r = HANDLE_SIZE_WORLD / 2;
+        const r = HANDLE_SIZE_WORLD / 2 / viewport.zoom;
         ctx.fillStyle = isDark ? "#1e293b" : "#fff";
         ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6";
         ctx.lineWidth = 1 / viewport.zoom;
@@ -1368,13 +1363,18 @@ export function Canvas({
       return;
     }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") {
-      if (clipboardRef.current.length > 0 && onCreate) {
+      if (clipboardRef.current.length > 0) {
         const offset = 30;
         for (const el of clipboardRef.current) {
-          void onCreate(
-            el.type as "sticky_note" | "rectangle" | "circle" | "text" | "frame" | "line",
-            el.x + offset, el.y + offset, el.width, el.height
-          );
+          void (async () => {
+            const id = await (onCreate as (type: string, x: number, y: number, w?: number, h?: number) => Promise<string | void>)(
+              el.type as "sticky_note" | "rectangle" | "circle" | "text" | "frame" | "line",
+              el.x + offset, el.y + offset, el.width, el.height
+            );
+            if (id && typeof id === "string") {
+              onUpdate(id, { text: el.text, color: el.color, properties: el.properties });
+            }
+          })();
         }
       }
       return;
@@ -1730,6 +1730,7 @@ export function Canvas({
         const textColor = getElementTextColor(el, isDark);
         // Code block: solid dark background so light text is readable; stickies: solid color; other text: slight tint
         const backgroundColor = isCodeBlock ? el.color : isSticky ? el.color : `${el.color}22`;
+        const lineHeightStr = `${lineHeightPx}px`;
         const measureStyle = {
           position: "absolute" as const,
           left: -9999,
@@ -1737,16 +1738,17 @@ export function Canvas({
           width: w,
           padding: paddingPx,
           fontSize,
-          lineHeight: lineHeightPx,
+          lineHeight: lineHeightStr,
           fontFamily: elFF.css,
           fontWeight,
           fontStyle,
           textAlign,
           whiteSpace: "pre-wrap" as const,
+          wordBreak: "break-word" as const,
           overflow: "hidden",
           visibility: "hidden" as const,
           margin: 0,
-          border: "none",
+          border: "1px solid transparent",
           boxSizing: "border-box" as const,
         };
         return (
@@ -1755,8 +1757,9 @@ export function Canvas({
             <div ref={measureRef} style={measureStyle} />
             <textarea
               ref={(ta) => {
+                const isNew = ta && editTextareaRef.current !== ta;
                 editTextareaRef.current = ta;
-                if (ta) {
+                if (ta && isNew) {
                   ta.focus();
                   ta.setSelectionRange(0, 0);
                   ta.scrollTop = 0;
@@ -1769,7 +1772,7 @@ export function Canvas({
               style={{
                 padding: paddingPx,
                 fontSize,
-                lineHeight: lineHeightPx,
+                lineHeight: lineHeightStr,
                 fontFamily: elFF.css,
                 fontWeight,
                 fontStyle,
@@ -1813,9 +1816,9 @@ export function Canvas({
                 aria-hidden
                 className="caret-blink pointer-events-none absolute"
                 style={{
-                  left: paddingPx + caretPosition.left - textareaScroll.scrollLeft,
-                  top: paddingPx + caretPosition.top - textareaScroll.scrollTop,
-                  width: 1,
+                  left: 1 + caretPosition.left - textareaScroll.scrollLeft,
+                  top: 1 + caretPosition.top - textareaScroll.scrollTop,
+                  width: 1.5,
                   height: caretPosition.height,
                   backgroundColor: textColor,
                 }}
@@ -1828,21 +1831,27 @@ export function Canvas({
   );
 }
 
-// Helper: wrap text into lines
+// Helper: wrap text into lines (handles explicit newlines and word-wrap)
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
-  const words = text.split(" ");
   const lines: string[] = [];
-  let currentLine = "";
-
-  for (const word of words) {
-    const testLine = currentLine ? `${currentLine} ${word}` : word;
-    if (ctx.measureText(testLine).width > maxWidth && currentLine) {
-      lines.push(currentLine);
-      currentLine = word;
-    } else {
-      currentLine = testLine;
+  const paragraphs = text.split("\n");
+  for (const paragraph of paragraphs) {
+    if (paragraph === "") {
+      lines.push("");
+      continue;
     }
+    const words = paragraph.split(" ");
+    let currentLine = "";
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      if (ctx.measureText(testLine).width > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
   }
-  if (currentLine) lines.push(currentLine);
   return lines.length ? lines : [""];
 }
