@@ -15,7 +15,8 @@ type Member = { user_id: string; role: string; email?: string };
 
 export function ShareBoardModal({ boardId, boardName, currentUser, accessToken, onClose }: ShareBoardModalProps) {
   const [members, setMembers] = useState<Member[]>([]);
-  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [_ownerId, setOwnerId] = useState<string | null>(null);
+  void _ownerId;
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"editor" | "viewer">("editor");
   const [loading, setLoading] = useState(true);

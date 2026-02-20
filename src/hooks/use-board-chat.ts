@@ -14,6 +14,7 @@ export function useBoardChat(boardId: string | null, user: { id: string; email?:
 
   useEffect(() => {
     if (!boardId || !user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset when board/user unmounts
       setMessages([]);
       setLoading(false);
       return;
@@ -54,7 +55,7 @@ export function useBoardChat(boardId: string | null, user: { id: string; email?:
       supabase.removeChannel(channel);
       channelRef.current = null;
     };
-  }, [boardId, user?.id]);
+  }, [boardId, user]);
 
   const sendMessage = useCallback(
     async (body: string) => {

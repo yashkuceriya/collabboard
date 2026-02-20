@@ -261,7 +261,6 @@ function buildCanvasFont(el: BoardElement): string {
 // Text wrapping cache — avoids expensive measureText calls on every frame
 // Cache is keyed by "font|maxWidth|text" and cleared when elements change
 const wrapTextCache = new Map<string, string[]>();
-let wrapTextCacheGeneration = 0;
 
 function wrapTextCached(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, font: string): string[] {
   const key = `${font}|${Math.round(maxWidth)}|${text}`;
@@ -274,7 +273,6 @@ function wrapTextCached(ctx: CanvasRenderingContext2D, text: string, maxWidth: n
 }
 
 function invalidateWrapCache() {
-  wrapTextCacheGeneration++;
   wrapTextCache.clear();
 }
 
@@ -358,7 +356,7 @@ export function Canvas({
     if (!openEditorForId || !onOpenEditorFulfilled) return;
     const el = elements.find((e) => e.id === openEditorForId);
     if (el) {
-      setEditingId(openEditorForId); // eslint-disable-line react-hooks/set-state-in-effect -- intentional prop→state sync
+      setEditingId(openEditorForId);
       setEditText(el.text ?? "");
       onOpenEditorFulfilled();
     }
@@ -989,14 +987,21 @@ export function Canvas({
       ctx.restore();
     });
     visibleCountRef.current = visibleDrawn;
-  }, [elements, sortedElements, viewport, selectedId, selectedIds, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, perfMode, idToElement]);
+  }, [elements, sortedElements, viewport, selectedId, selectedIds, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, idToElement]);
 
-  // Continuous rAF render loop — runs at display refresh rate (60/120 Hz)
-  // like Miro/Figma for maximum responsiveness and accurate FPS measurement
+  // Sampled perf metrics for panel (avoid reading refs during render)
+  const [perfVisibleCount, setPerfVisibleCount] = useState(0);
+  const [perfCursorLatency, setPerfCursorLatency] = useState<number | null>(null);
+  const [perfSyncLatency, setPerfSyncLatency] = useState<number | null>(null);
+
   const fpsRef = useRef(0);
   const frameCountRef = useRef(0);
   const drawRef = useRef(draw);
-  drawRef.current = draw;
+  useEffect(() => {
+    drawRef.current = draw;
+  }, [draw]);
+
+  // Continuous rAF render loop — runs at display refresh rate (60/120 Hz)
   useEffect(() => {
     let running = true;
 
@@ -1011,15 +1016,19 @@ export function Canvas({
     return () => { running = false; };
   }, []);
 
-  // FPS sampling on a separate interval — decoupled from the render loop
-  // so setFps doesn't trigger React re-renders inside rAF
+  // FPS + perf sampling on interval (no refs read during render)
   useEffect(() => {
     const id = setInterval(() => {
       fpsRef.current = frameCountRef.current;
       setFps(frameCountRef.current);
+      setPerfVisibleCount(visibleCountRef.current);
+      setPerfCursorLatency(cursorLatencyRef?.current ?? null);
+      setPerfSyncLatency(syncLatencyRef?.current ?? null);
       frameCountRef.current = 0;
     }, 1000);
     return () => clearInterval(id);
+    // Refs are stable; no need in deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Resize observer — invalidates cached rect on container resize
@@ -1334,7 +1343,8 @@ export function Canvas({
             if (inside && curFrame !== el.id) {
               onUpdate(child.id, { properties: { ...(child.properties as Record<string, Json>), frameId: el.id } as Json });
             } else if (!inside && curFrame === el.id) {
-              const { frameId: _, ...rest } = (child.properties as Record<string, Json>);
+              const rest = { ...(child.properties as Record<string, Json>) };
+              delete rest.frameId;
               onUpdate(child.id, { properties: rest as Json });
             }
           }
@@ -1352,7 +1362,8 @@ export function Canvas({
           if (assignedFrame && curFrame !== assignedFrame) {
             onUpdate(el.id, { properties: { ...(el.properties as Record<string, Json>), frameId: assignedFrame } as Json });
           } else if (!assignedFrame && curFrame) {
-            const { frameId: _, ...rest } = (el.properties as Record<string, Json>);
+            const rest = { ...(el.properties as Record<string, Json>) };
+            delete rest.frameId;
             onUpdate(el.id, { properties: rest as Json });
           }
         }
@@ -1528,10 +1539,10 @@ export function Canvas({
           metrics={{
             fps,
             elementCount: elements.length,
-            visibleCount: visibleCountRef.current,
+            visibleCount: perfVisibleCount,
             peerCount: peers.length,
-            cursorLatency: cursorLatencyRef?.current ?? null,
-            syncLatency: syncLatencyRef?.current ?? null,
+            cursorLatency: perfCursorLatency,
+            syncLatency: perfSyncLatency,
             spatialIndexActive: spatialIndex !== null,
           }}
           onStressTest={onStressTest}

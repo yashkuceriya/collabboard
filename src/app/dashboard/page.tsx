@@ -26,7 +26,7 @@ export default function DashboardPage() {
   const [shareBoard, setShareBoard] = useState<{ id: string; name: string } | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("all");
   const [search, setSearch] = useState("");
-  const [recentKey, setRecentKey] = useState(0);
+  const [, setRecentKey] = useState(0);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -74,7 +74,10 @@ export default function DashboardPage() {
   }, [router]);
 
   useEffect(() => {
-    if (pathname === "/dashboard" && user?.id) fetchMyBoards(user.id);
+    if (pathname === "/dashboard" && user?.id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- load data on mount/navigation
+      fetchMyBoards(user.id);
+    }
   }, [pathname, user?.id]);
 
   useEffect(() => {
