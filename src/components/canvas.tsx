@@ -352,6 +352,11 @@ export function Canvas({
               if (distanceToSegment(x, y, pts[j].x, pts[j].y, pts[j + 1].x, pts[j + 1].y) <= threshold) return el;
             }
           }
+        } else if (el.type === "line") {
+          const props = el.properties as { x2?: number; y2?: number } | undefined;
+          const x2 = el.x + (props?.x2 ?? el.width);
+          const y2 = el.y + (props?.y2 ?? el.height);
+          if (distanceToSegment(x, y, el.x, el.y, x2, y2) <= threshold) return el;
         } else if (x >= el.x && x <= el.x + el.width && y >= el.y && y <= el.y + el.height) {
           return el;
         }
@@ -1203,6 +1208,8 @@ export function Canvas({
       else if (key === "l") onToolChange("line");
       else if (key === "t") onToolChange("text");
       else if (key === "a") onToolChange("connector");
+      else if (key === "p") onToolChange("pen");
+      else if (key === "e") onToolChange("eraser");
     }
   }
 
