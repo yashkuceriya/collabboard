@@ -28,7 +28,7 @@ export default function BoardPage() {
   const [showChatPanel, setShowChatPanel] = useState(false);
   const [elements, setElements] = useState<BoardElement[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tool, setTool] = useState<"select" | "sticky_note" | "rectangle" | "circle" | "line" | "text" | "connector" | "pen" | "eraser">("select");
+  const [tool, setTool] = useState<"select" | "sticky_note" | "rectangle" | "circle" | "line" | "text" | "connector" | "pen" | "eraser" | "frame">("select");
   const [openEditorForId, setOpenEditorForId] = useState<string | null>(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
   const [boardName, setBoardName] = useState("Untitled Board");
@@ -121,12 +121,16 @@ export default function BoardPage() {
         text: "#3B82F6", frame: "#6366F1", line: "#64748b",
       };
       const color = colorMap[type] ?? "#3B82F6";
-      const w = width ?? (type === "sticky_note" ? 200 : type === "text" ? 180 : type === "frame" ? 400 : type === "line" ? 200 : 120);
-      const h = height ?? (type === "sticky_note" ? 200 : type === "text" ? 40 : type === "circle" ? 120 : type === "frame" ? 300 : type === "line" ? 0 : 100);
+      const isLine = type === "line";
+      const w = width ?? (type === "sticky_note" ? 200 : type === "text" ? 180 : type === "frame" ? 400 : isLine ? 200 : 120);
+      const h = height ?? (type === "sticky_note" ? 200 : type === "text" ? 40 : type === "circle" ? 120 : type === "frame" ? 300 : isLine ? 0 : 100);
       const now = new Date().toISOString();
       const tempId = `temp-${Date.now()}`;
-      const elX = width != null ? x : x - w / 2;
-      const elY = height != null ? y : y - h / 2;
+      const elX = width != null ? x : x - (isLine ? 0 : w / 2);
+      const elY = height != null ? y : y - (isLine ? 0 : h / 2);
+      const lineProps = isLine ? { x2: w, y2: h } : {};
+      const storeW = isLine ? Math.abs(w) || 1 : w;
+      const storeH = isLine ? Math.abs(h) || 1 : h;
 
       const tempEl: BoardElement = {
         id: tempId,
@@ -134,11 +138,11 @@ export default function BoardPage() {
         type,
         x: elX,
         y: elY,
-        width: w,
-        height: h,
+        width: storeW,
+        height: storeH,
         color,
-        text: type === "sticky_note" ? "New note" : "",
-        properties: type === "sticky_note" ? { rotation: (Math.random() - 0.5) * 6 } : type === "line" ? { x2: w, y2: h } : {},
+        text: type === "sticky_note" ? "New note" : type === "frame" ? "New frame" : "",
+        properties: type === "sticky_note" ? { rotation: (Math.random() - 0.5) * 6 } : lineProps,
         created_by: user.id,
         updated_at: now,
         created_at: now,
@@ -153,8 +157,8 @@ export default function BoardPage() {
           type,
           x: tempEl.x,
           y: tempEl.y,
-          width: w,
-          height: h,
+          width: storeW,
+          height: storeH,
           color,
           text: tempEl.text,
           properties: tempEl.properties ?? {},
@@ -667,6 +671,7 @@ export default function BoardPage() {
         openEditorForId={openEditorForId}
         onOpenEditorFulfilled={() => setOpenEditorForId(null)}
         perfMode={perfMode}
+        interviewMode={interviewMode}
       />
     </div>
   );

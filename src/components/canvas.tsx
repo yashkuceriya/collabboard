@@ -4,10 +4,10 @@ import { useRef, useEffect, useLayoutEffect, useCallback, useState } from "react
 import { useTheme } from "@/components/theme-provider";
 import { ColorPicker } from "@/components/color-picker";
 import { FormatPanel } from "@/components/format-panel";
-import type { BoardElement } from "@/lib/types/database";
+import type { BoardElement, Json } from "@/lib/types/database";
 import type { Peer } from "@/hooks/use-presence";
 
-type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "line" | "text" | "connector" | "pen" | "eraser";
+type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "line" | "text" | "connector" | "pen" | "eraser" | "frame";
 
 interface CanvasProps {
   elements: BoardElement[];
@@ -33,6 +33,8 @@ interface CanvasProps {
   onOpenEditorFulfilled?: () => void;
   /** Show FPS meter (for ?perf=1) */
   perfMode?: boolean;
+  /** Interview board mode — changes empty board hint */
+  interviewMode?: boolean;
 }
 
 // Color name labels for cursors
@@ -246,6 +248,7 @@ export function Canvas({
   openEditorForId,
   onOpenEditorFulfilled,
   perfMode = false,
+  interviewMode = false,
 }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -281,6 +284,7 @@ export function Canvas({
   const [connectorPreview, setConnectorPreview] = useState<{ x: number; y: number } | null>(null);
   const [formatPanelOpen, setFormatPanelOpen] = useState(false);
   const [strokePoints, setStrokePoints] = useState<{ x: number; y: number }[]>([]);
+  const [isErasing, setIsErasing] = useState(false);
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const clipboardRef = useRef<BoardElement[]>([]);
 
@@ -415,8 +419,13 @@ export function Canvas({
     const inView = (ex: number, ey: number, ew: number, eh: number) =>
       ex + ew >= vx && ex <= vx + vw && ey + eh >= vy && ey <= vy + vh;
 
-    // Draw elements (skip connectors; they are drawn after)
-    for (const el of elements) {
+    // Draw frames first (behind other elements), then non-frames, then connectors
+    const sortedElements = [...elements].sort((a, b) => {
+      if (a.type === "frame" && b.type !== "frame") return -1;
+      if (a.type !== "frame" && b.type === "frame") return 1;
+      return 0;
+    });
+    for (const el of sortedElements) {
       if (el.type === "connector") continue;
       const bounds =
         resizing && el.id === resizing.id && resizeDraft
@@ -542,18 +551,28 @@ export function Canvas({
         ctx.lineTo(x2, y2);
         ctx.stroke();
       } else if (el.type === "frame") {
+        ctx.fillStyle = (el.color ?? "#6366F1") + "08";
+        ctx.beginPath();
+        ctx.roundRect(x, y, width, height, 10);
+        ctx.fill();
         ctx.strokeStyle = el.color;
         ctx.lineWidth = 2 / viewport.zoom;
         ctx.setLineDash([8 / viewport.zoom, 4 / viewport.zoom]);
         ctx.beginPath();
-        ctx.roundRect(x, y, width, height, 8);
+        ctx.roundRect(x, y, width, height, 10);
         ctx.stroke();
         ctx.setLineDash([]);
         if (el.text) {
-          const frameFont = getElementFontSize(el);
+          const labelSize = Math.max(12, 14 / viewport.zoom);
+          ctx.fillStyle = isDark ? "#e5e7eb" : "#374151";
+          ctx.font = `bold ${labelSize}px Inter, system-ui, sans-serif`;
+          const labelBgW = ctx.measureText(el.text).width + 16;
+          ctx.fillStyle = isDark ? "rgba(17,24,39,0.85)" : "rgba(255,255,255,0.9)";
+          ctx.beginPath();
+          ctx.roundRect(x + 8, y - labelSize - 6, labelBgW, labelSize + 8, 4);
+          ctx.fill();
           ctx.fillStyle = el.color;
-          ctx.font = `bold ${frameFont.canvas}px Inter, system-ui, sans-serif`;
-          ctx.fillText(el.text, x + 10, y - 6);
+          ctx.fillText(el.text, x + 16, y - 6);
         }
       } else if (el.type === "freehand") {
         const pts = (el.properties as { points?: { x: number; y: number }[] })?.points;
@@ -569,11 +588,15 @@ export function Canvas({
         }
       }
 
+      // Highlight elements that belong to the selected frame
+      const elFrameId = (el.properties as { frameId?: string } | undefined)?.frameId;
+      const isFrameChild = elFrameId && elFrameId === selectedId;
+
       // Selection outline (single or multi)
-      if (el.id === selectedId || selectedIds.has(el.id)) {
-        ctx.strokeStyle = "#3b82f6";
+      if (el.id === selectedId || selectedIds.has(el.id) || isFrameChild) {
+        ctx.strokeStyle = isFrameChild ? "#818cf8" : "#3b82f6";
         ctx.lineWidth = 1.5 / viewport.zoom;
-        ctx.setLineDash(selectedIds.has(el.id) && el.id !== selectedId ? [4 / viewport.zoom, 3 / viewport.zoom] : []);
+        ctx.setLineDash(isFrameChild || (selectedIds.has(el.id) && el.id !== selectedId) ? [4 / viewport.zoom, 3 / viewport.zoom] : []);
         ctx.beginPath();
         ctx.roundRect(x - 3, y - 3, width + 6, height + 6, 6);
         ctx.stroke();
@@ -620,7 +643,7 @@ export function Canvas({
     }
 
     // Draw-by-drag preview (rectangle / circle / line)
-    if (drawDraft && (tool === "rectangle" || tool === "circle" || tool === "line")) {
+    if (drawDraft && (tool === "rectangle" || tool === "circle" || tool === "line" || tool === "frame")) {
       ctx.save();
       ctx.lineWidth = 2 / viewport.zoom;
       ctx.setLineDash([6 / viewport.zoom, 4 / viewport.zoom]);
@@ -636,15 +659,24 @@ export function Canvas({
         const y = Math.min(drawDraft.startY, drawDraft.currentY);
         const w = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentX - drawDraft.startX));
         const h = Math.max(MIN_DRAW_SIZE, Math.abs(drawDraft.currentY - drawDraft.startY));
-        ctx.strokeStyle = tool === "rectangle" ? "#42A5F5" : "#10B981";
-        if (tool === "rectangle") {
+        if (tool === "frame") {
+          ctx.strokeStyle = "#6366F1";
+          ctx.setLineDash([8 / viewport.zoom, 4 / viewport.zoom]);
           ctx.beginPath();
-          ctx.roundRect(x, y, w, h, 4);
+          ctx.roundRect(x, y, w, h, 10);
           ctx.stroke();
+          ctx.setLineDash([6 / viewport.zoom, 4 / viewport.zoom]);
         } else {
-          ctx.beginPath();
-          ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-          ctx.stroke();
+          ctx.strokeStyle = tool === "rectangle" ? "#42A5F5" : "#10B981";
+          if (tool === "rectangle") {
+            ctx.beginPath();
+            ctx.roundRect(x, y, w, h, 4);
+            ctx.stroke();
+          } else {
+            ctx.beginPath();
+            ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+            ctx.stroke();
+          }
         }
       }
       ctx.restore();
@@ -837,6 +869,7 @@ export function Canvas({
       return;
     }
     if (tool === "eraser") {
+      setIsErasing(true);
       const hit = hitTest(sx, sy);
       if (hit) onDelete(hit.id);
       return;
@@ -895,7 +928,7 @@ export function Canvas({
         setConnectorFromPoint(null);
         setConnectorPreview(null);
       }
-    } else if (tool === "rectangle" || tool === "circle" || tool === "line") {
+    } else if (tool === "rectangle" || tool === "circle" || tool === "line" || tool === "frame") {
       setDrawDraft({ startX: world.x, startY: world.y, currentX: world.x, currentY: world.y });
     } else if (tool === "sticky_note" || tool === "text") {
       void onCreate(tool, world.x, world.y);
@@ -912,6 +945,12 @@ export function Canvas({
     // Broadcast cursor position in world coords
     const world = screenToWorld(sx, sy);
     onCursorMove(world.x, world.y);
+
+    // Eraser: continuously erase elements under cursor while dragging
+    if (isErasing && tool === "eraser") {
+      const hit = hitTest(sx, sy);
+      if (hit) onDelete(hit.id);
+    }
 
     // Pen stroke: append point while dragging (with small threshold to reduce points)
     if (strokePoints.length > 0) {
@@ -946,16 +985,24 @@ export function Canvas({
 
     if (dragging) {
       const world = screenToWorld(sx, sy);
-      if (onLocalUpdate) {
-        onLocalUpdate(dragging.id, {
-          x: world.x - dragging.offsetX,
-          y: world.y - dragging.offsetY,
-        });
-      } else {
-        onUpdate(dragging.id, {
-          x: world.x - dragging.offsetX,
-          y: world.y - dragging.offsetY,
-        });
+      const newX = world.x - dragging.offsetX;
+      const newY = world.y - dragging.offsetY;
+      const updateFn = onLocalUpdate ?? onUpdate;
+      updateFn(dragging.id, { x: newX, y: newY });
+
+      const dragEl = elements.find((el) => el.id === dragging.id);
+      if (dragEl?.type === "frame") {
+        const dx = newX - dragEl.x;
+        const dy = newY - dragEl.y;
+        if (dx !== 0 || dy !== 0) {
+          for (const child of elements) {
+            if (child.id === dragging.id || child.type === "connector") continue;
+            const fp = child.properties as { frameId?: string } | undefined;
+            if (fp?.frameId === dragging.id) {
+              updateFn(child.id, { x: child.x + dx, y: child.y + dy });
+            }
+          }
+        }
       }
     }
 
@@ -1039,7 +1086,7 @@ export function Canvas({
       void onCreateFreehand([...strokePoints]);
       setStrokePoints([]);
     }
-    if (drawDraft && (tool === "rectangle" || tool === "circle" || tool === "line")) {
+    if (drawDraft && (tool === "rectangle" || tool === "circle" || tool === "line" || tool === "frame")) {
       if (tool === "line") {
         const dx = drawDraft.currentX - drawDraft.startX;
         const dy = drawDraft.currentY - drawDraft.startY;
@@ -1080,10 +1127,43 @@ export function Canvas({
       const el = elements.find((e) => e.id === dragging.id);
       if (el) {
         onUpdate(dragging.id, { x: el.x, y: el.y });
+
+        if (el.type === "frame") {
+          for (const child of elements) {
+            if (child.id === el.id || child.type === "connector" || child.type === "frame") continue;
+            const inside = child.x >= el.x && child.y >= el.y &&
+              child.x + child.width <= el.x + el.width && child.y + child.height <= el.y + el.height;
+            const curFrame = (child.properties as { frameId?: string } | undefined)?.frameId;
+            if (inside && curFrame !== el.id) {
+              onUpdate(child.id, { properties: { ...(child.properties as Record<string, Json>), frameId: el.id } as Json });
+            } else if (!inside && curFrame === el.id) {
+              const { frameId: _, ...rest } = (child.properties as Record<string, Json>);
+              onUpdate(child.id, { properties: rest as Json });
+            }
+          }
+        } else {
+          const frames = elements.filter((f) => f.type === "frame" && f.id !== el.id);
+          let assignedFrame: string | undefined;
+          for (const frame of frames) {
+            if (el.x >= frame.x && el.y >= frame.y &&
+                el.x + el.width <= frame.x + frame.width && el.y + el.height <= frame.y + frame.height) {
+              assignedFrame = frame.id;
+              break;
+            }
+          }
+          const curFrame = (el.properties as { frameId?: string } | undefined)?.frameId;
+          if (assignedFrame && curFrame !== assignedFrame) {
+            onUpdate(el.id, { properties: { ...(el.properties as Record<string, Json>), frameId: assignedFrame } as Json });
+          } else if (!assignedFrame && curFrame) {
+            const { frameId: _, ...rest } = (el.properties as Record<string, Json>);
+            onUpdate(el.id, { properties: rest as Json });
+          }
+        }
       }
     }
     setDragging(null);
     setPanning(false);
+    setIsErasing(false);
   }
 
   const handleWheel = useCallback(
@@ -1137,7 +1217,8 @@ export function Canvas({
       (hit.type === "sticky_note" ||
         hit.type === "rectangle" ||
         hit.type === "circle" ||
-        hit.type === "text")
+        hit.type === "text" ||
+        hit.type === "frame")
     ) {
       setSelectedId(hit.id);
       setEditingId(hit.id);
@@ -1206,6 +1287,7 @@ export function Canvas({
       else if (key === "r") onToolChange("rectangle");
       else if (key === "o") onToolChange("circle");
       else if (key === "l") onToolChange("line");
+      else if (key === "f") onToolChange("frame");
       else if (key === "t") onToolChange("text");
       else if (key === "a") onToolChange("connector");
       else if (key === "p") onToolChange("pen");
@@ -1266,52 +1348,121 @@ export function Canvas({
       {elements.length === 0 && !dragging && !panning && !drawDraft && (
         <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
           <div className="text-center bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-2xl px-8 py-7 border border-gray-200/50 dark:border-gray-700/50 shadow-xl pointer-events-auto">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center mx-auto mb-3 shadow-sm">
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3 shadow-sm ${interviewMode ? "bg-gradient-to-br from-emerald-500 to-teal-500" : "bg-gradient-to-br from-blue-500 to-indigo-500"}`}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
-                <path d="M12 5v14M5 12h14" />
+                {interviewMode
+                  ? <><path d="M4 7V4h16v3M9 20h6M12 4v16" /></>
+                  : <path d="M12 5v14M5 12h14" />}
               </svg>
             </div>
-            <p className="text-base font-semibold text-gray-700 dark:text-gray-200 mb-1">Your board is empty</p>
-            <p className="text-sm text-gray-400 dark:text-gray-500 mb-5 max-w-[280px]">Get started by adding an element</p>
-            <div className="flex gap-2 justify-center">
-              <button
-                type="button"
-                onClick={() => {
-                  const cx = (containerRef.current?.clientWidth ?? 800) / 2;
-                  const cy = (containerRef.current?.clientHeight ?? 600) / 2;
-                  const world = screenToWorld(cx, cy);
-                  void onCreate("sticky_note", world.x, world.y);
-                }}
-                className="px-3.5 py-2 text-xs font-medium rounded-lg bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300 hover:bg-yellow-200 dark:hover:bg-yellow-900/60 border border-yellow-200 dark:border-yellow-800/50 transition-colors"
-              >
-                Sticky Note
-              </button>
-              <button
-                type="button"
-                onClick={() => { onToolChange("rectangle"); }}
-                className="px-3.5 py-2 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800/50 transition-colors"
-              >
-                Rectangle
-              </button>
-              <button
-                type="button"
-                onClick={() => { onToolChange("circle"); }}
-                className="px-3.5 py-2 text-xs font-medium rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/50 transition-colors"
-              >
-                Circle
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const cx = (containerRef.current?.clientWidth ?? 800) / 2;
-                  const cy = (containerRef.current?.clientHeight ?? 600) / 2;
-                  const world = screenToWorld(cx, cy);
-                  void onCreate("text", world.x, world.y);
-                }}
-                className="px-3.5 py-2 text-xs font-medium rounded-lg bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/50 border border-violet-200 dark:border-violet-800/50 transition-colors"
-              >
-                Text
-              </button>
+            <p className="text-base font-semibold text-gray-700 dark:text-gray-200 mb-1">
+              {interviewMode ? "Interview Board" : "Your board is empty"}
+            </p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 mb-5 max-w-[280px]">
+              {interviewMode
+                ? "Draw system diagrams, write code, and sketch your solution. Use the AI assistant for hints."
+                : "Get started by adding an element"}
+            </p>
+            <div className="flex gap-2 justify-center flex-wrap">
+              {interviewMode ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => { onToolChange("rectangle"); }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800/50 transition-colors"
+                  >
+                    Rectangle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onToolChange("circle"); }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/50 transition-colors"
+                  >
+                    Circle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onToolChange("pen"); }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 hover:bg-orange-100 dark:hover:bg-orange-900/50 border border-orange-200 dark:border-orange-800/50 transition-colors"
+                  >
+                    Draw
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cx = (containerRef.current?.clientWidth ?? 800) / 2;
+                      const cy = (containerRef.current?.clientHeight ?? 600) / 2;
+                      const world = screenToWorld(cx, cy);
+                      void onCreate("text", world.x, world.y);
+                    }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/50 border border-violet-200 dark:border-violet-800/50 transition-colors"
+                  >
+                    Code Block
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onToolChange("connector"); }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-gray-50 dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 border border-gray-200 dark:border-gray-700/50 transition-colors"
+                  >
+                    Connect
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onToolChange("frame"); }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800/50 transition-colors"
+                  >
+                    Frame
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cx = (containerRef.current?.clientWidth ?? 800) / 2;
+                      const cy = (containerRef.current?.clientHeight ?? 600) / 2;
+                      const world = screenToWorld(cx, cy);
+                      void onCreate("sticky_note", world.x, world.y);
+                    }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300 hover:bg-yellow-200 dark:hover:bg-yellow-900/60 border border-yellow-200 dark:border-yellow-800/50 transition-colors"
+                  >
+                    Sticky Note
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onToolChange("rectangle"); }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800/50 transition-colors"
+                  >
+                    Rectangle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onToolChange("circle"); }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/50 transition-colors"
+                  >
+                    Circle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onToolChange("frame"); }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800/50 transition-colors"
+                  >
+                    Frame
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cx = (containerRef.current?.clientWidth ?? 800) / 2;
+                      const cy = (containerRef.current?.clientHeight ?? 600) / 2;
+                      const world = screenToWorld(cx, cy);
+                      void onCreate("text", world.x, world.y);
+                    }}
+                    className="px-3.5 py-2 text-xs font-medium rounded-lg bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/50 border border-violet-200 dark:border-violet-800/50 transition-colors"
+                  >
+                    Text
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

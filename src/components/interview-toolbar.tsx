@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 
-export type InterviewTool = "select" | "sticky_note" | "pen" | "eraser" | "text" | "rectangle" | "circle" | "line" | "connector";
+export type InterviewTool = "select" | "sticky_note" | "pen" | "eraser" | "text" | "rectangle" | "circle" | "line" | "connector" | "frame";
 
 interface InterviewToolbarProps {
   tool?: InterviewTool;
@@ -144,6 +144,9 @@ export function InterviewToolbar({ tool, onToolChange, onInsertTemplate, onInser
             </ToolButton>
             <ToolButton active={tool === "connector"} onClick={() => onToolChange("connector")} label="Connect (A)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h10" /><path d="M12 5l5 7-5 7" /></svg>
+            </ToolButton>
+            <ToolButton active={(tool as string) === "frame"} onClick={() => onToolChange("frame" as InterviewTool)} label="Frame (F)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="4 2"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M2 8h20" strokeDasharray="0" /></svg>
             </ToolButton>
             <ToolButton active={tool === "pen"} onClick={() => onToolChange("pen")} label="Draw (P)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21l4-1L18.5 8.5a2 2 0 00-3-3L4 17l-1 4z" /></svg>
