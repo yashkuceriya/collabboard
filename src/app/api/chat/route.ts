@@ -135,7 +135,8 @@ Reply in plain text only: no markdown, no asterisks, no code blocks, no backtick
 Capabilities:
 - Create sticky notes, shapes (rectangle/circle), text elements, and frames (grouping areas)
 - Create connectors (arrows) between two shapes using createConnector(fromId, toId) — use getBoardState to get element ids
-- Create frames to group and label sections of the board (e.g. "Sprint Planning", SWOT quadrants)
+- Create frames to group and label sections of the board (e.g. "Sprint Planning", SWOT quadrants). Elements inside a frame move together when the frame is moved.
+- When creating multiple related elements (e.g. SWOT, brainstorm), always wrap them in a frame using createFrame first, then place child elements inside the frame bounds
 - Move, resize, recolor, and delete existing elements
 - Read the current board state to understand context
 - getSuggestedPlacement: call before createStickyNote, createShape, or createTextElement to get an (x, y) that does not overlap existing elements. Prefer this so new items do not cover the board.
@@ -179,14 +180,15 @@ Guidelines:
         },
       }),
       createStickyNote: tool({
-        description: "Create a sticky note on the board. text: content of the note. x, y: position. color: hex e.g. #FFEB3B for yellow.",
+        description: "Create a sticky note on the board. text: content of the note. x, y: position. color: hex e.g. #FFEB3B for yellow. frameId: optional id of a frame to place this inside.",
         inputSchema: z.object({
           text: z.string().describe("Text content of the sticky note"),
           x: z.number().describe("X position"),
           y: z.number().describe("Y position"),
           color: z.string().describe("Hex color e.g. #FFEB3B").optional(),
+          frameId: z.string().describe("Optional UUID of a frame to assign this element to").optional(),
         }),
-        execute: async ({ text, x, y, color }) => {
+        execute: async ({ text, x, y, color, frameId }) => {
           const bg = color ?? "#FFEB3B";
           let posX = x, posY = y;
           if (await hasOverlap(posX, posY, 200, 200)) {
@@ -194,6 +196,8 @@ Guidelines:
             posX = safe.x;
             posY = safe.y;
           }
+          const props: Record<string, unknown> = { textColor: contrastTextColor(bg) };
+          if (frameId) props.frameId = frameId;
           const { data, error } = await supabase
             .from("board_elements")
             .insert({
@@ -205,7 +209,7 @@ Guidelines:
               height: 200,
               color: bg,
               text: text ?? "New note",
-              properties: { textColor: contrastTextColor(bg) },
+              properties: props,
               created_by: userId,
             } as never)
             .select("id")
@@ -215,7 +219,7 @@ Guidelines:
         },
       }),
       createShape: tool({
-        description: "Create a rectangle or circle. shapeType: 'rectangle' or 'circle'. x, y, width, height in board units. color: hex.",
+        description: "Create a rectangle or circle. shapeType: 'rectangle' or 'circle'. x, y, width, height in board units. color: hex. frameId: optional frame to place inside.",
         inputSchema: z.object({
           shapeType: z.enum(["rectangle", "circle"]).describe("rectangle or circle"),
           x: z.number().describe("X position"),
@@ -223,8 +227,9 @@ Guidelines:
           width: z.number().describe("Width in board units").optional(),
           height: z.number().describe("Height in board units").optional(),
           color: z.string().describe("Hex color").optional(),
+          frameId: z.string().describe("Optional UUID of a frame to assign this element to").optional(),
         }),
-        execute: async ({ shapeType, x, y, width, height, color }) => {
+        execute: async ({ shapeType, x, y, width, height, color, frameId }) => {
           const w = width ?? 150;
           const h = height ?? 100;
           let posX = x, posY = y;
@@ -233,6 +238,8 @@ Guidelines:
             posX = safe.x;
             posY = safe.y;
           }
+          const props: Record<string, unknown> = {};
+          if (frameId) props.frameId = frameId;
           const { data, error } = await supabase
             .from("board_elements")
             .insert({
@@ -244,6 +251,7 @@ Guidelines:
               height: h,
               color: color ?? "#42A5F5",
               text: "",
+              properties: props,
               created_by: userId,
             } as never)
             .select("id")
@@ -372,24 +380,44 @@ Guidelines:
         },
       }),
       generateIdeas: tool({
-        description: "Generate multiple sticky notes with brainstormed ideas on a topic. Creates 4-8 color-coded notes arranged in a grid. Places the grid so it does not overlap existing elements. Use when the user asks to brainstorm, generate ideas, or wants suggestions.",
+        description: "Generate multiple sticky notes with brainstormed ideas on a topic. Creates 4-8 color-coded notes arranged in a grid inside a frame. Places the grid so it does not overlap existing elements. Use when the user asks to brainstorm, generate ideas, or wants suggestions.",
         inputSchema: z.object({
           topic: z.string().describe("The topic to brainstorm about"),
           ideas: z.array(z.string()).describe("Array of idea texts, 4-8 items"),
         }),
-        execute: async ({ ideas }) => {
+        execute: async ({ topic, ideas }) => {
           const colors = ["#FFEB3B", "#FF9800", "#F48FB1", "#CE93D8", "#90CAF9", "#80CBC4", "#A5D6A7", "#FFFFFF"];
           const cols = Math.min(4, ideas.length);
           const rows = Math.ceil(ideas.length / cols);
-          const gridW = cols * 220;
-          const gridH = rows * 220;
+          const pad = 20;
+          const gridW = cols * 220 + pad * 2;
+          const gridH = rows * 220 + pad * 2 + 30;
           const start = await computeSuggestedPlacement(gridW, gridH);
+
+          const { data: frameData } = await supabase
+            .from("board_elements")
+            .insert({
+              board_id: boardId,
+              type: "frame",
+              x: start.x,
+              y: start.y,
+              width: gridW,
+              height: gridH,
+              color: "#6366F1",
+              text: topic,
+              created_by: userId,
+            } as never)
+            .select("id")
+            .single();
+          const frameId = (frameData as { id: string } | null)?.id;
+
           const created: string[] = [];
+          if (frameId) created.push(frameId);
           for (let i = 0; i < ideas.length; i++) {
             const col = i % cols;
             const row = Math.floor(i / cols);
-            const x = start.x + col * 220;
-            const y = start.y + row * 220;
+            const x = start.x + pad + col * 220;
+            const y = start.y + pad + 30 + row * 220;
             const bg = colors[i % colors.length];
             const { data, error } = await supabase
               .from("board_elements")
@@ -402,7 +430,7 @@ Guidelines:
                 height: 200,
                 color: bg,
                 text: ideas[i],
-                properties: { textColor: contrastTextColor(bg) },
+                properties: { textColor: contrastTextColor(bg), frameId },
                 created_by: userId,
               } as never)
               .select("id")

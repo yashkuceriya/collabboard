@@ -4,7 +4,7 @@ import { useRef, useEffect, useLayoutEffect, useCallback, useState } from "react
 import { useTheme } from "@/components/theme-provider";
 import { ColorPicker } from "@/components/color-picker";
 import { FormatPanel } from "@/components/format-panel";
-import type { BoardElement } from "@/lib/types/database";
+import type { BoardElement, Json } from "@/lib/types/database";
 import type { Peer } from "@/hooks/use-presence";
 
 type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "line" | "text" | "connector" | "pen" | "eraser";
@@ -281,6 +281,7 @@ export function Canvas({
   const [connectorPreview, setConnectorPreview] = useState<{ x: number; y: number } | null>(null);
   const [formatPanelOpen, setFormatPanelOpen] = useState(false);
   const [strokePoints, setStrokePoints] = useState<{ x: number; y: number }[]>([]);
+  const [isErasing, setIsErasing] = useState(false);
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const clipboardRef = useRef<BoardElement[]>([]);
 
@@ -415,8 +416,13 @@ export function Canvas({
     const inView = (ex: number, ey: number, ew: number, eh: number) =>
       ex + ew >= vx && ex <= vx + vw && ey + eh >= vy && ey <= vy + vh;
 
-    // Draw elements (skip connectors; they are drawn after)
-    for (const el of elements) {
+    // Draw frames first (behind other elements), then non-frames, then connectors
+    const sortedElements = [...elements].sort((a, b) => {
+      if (a.type === "frame" && b.type !== "frame") return -1;
+      if (a.type !== "frame" && b.type === "frame") return 1;
+      return 0;
+    });
+    for (const el of sortedElements) {
       if (el.type === "connector") continue;
       const bounds =
         resizing && el.id === resizing.id && resizeDraft
@@ -542,18 +548,28 @@ export function Canvas({
         ctx.lineTo(x2, y2);
         ctx.stroke();
       } else if (el.type === "frame") {
+        ctx.fillStyle = (el.color ?? "#6366F1") + "08";
+        ctx.beginPath();
+        ctx.roundRect(x, y, width, height, 10);
+        ctx.fill();
         ctx.strokeStyle = el.color;
         ctx.lineWidth = 2 / viewport.zoom;
         ctx.setLineDash([8 / viewport.zoom, 4 / viewport.zoom]);
         ctx.beginPath();
-        ctx.roundRect(x, y, width, height, 8);
+        ctx.roundRect(x, y, width, height, 10);
         ctx.stroke();
         ctx.setLineDash([]);
         if (el.text) {
-          const frameFont = getElementFontSize(el);
+          const labelSize = Math.max(12, 14 / viewport.zoom);
+          ctx.fillStyle = isDark ? "#e5e7eb" : "#374151";
+          ctx.font = `bold ${labelSize}px Inter, system-ui, sans-serif`;
+          const labelBgW = ctx.measureText(el.text).width + 16;
+          ctx.fillStyle = isDark ? "rgba(17,24,39,0.85)" : "rgba(255,255,255,0.9)";
+          ctx.beginPath();
+          ctx.roundRect(x + 8, y - labelSize - 6, labelBgW, labelSize + 8, 4);
+          ctx.fill();
           ctx.fillStyle = el.color;
-          ctx.font = `bold ${frameFont.canvas}px Inter, system-ui, sans-serif`;
-          ctx.fillText(el.text, x + 10, y - 6);
+          ctx.fillText(el.text, x + 16, y - 6);
         }
       } else if (el.type === "freehand") {
         const pts = (el.properties as { points?: { x: number; y: number }[] })?.points;
@@ -569,11 +585,15 @@ export function Canvas({
         }
       }
 
+      // Highlight elements that belong to the selected frame
+      const elFrameId = (el.properties as { frameId?: string } | undefined)?.frameId;
+      const isFrameChild = elFrameId && elFrameId === selectedId;
+
       // Selection outline (single or multi)
-      if (el.id === selectedId || selectedIds.has(el.id)) {
-        ctx.strokeStyle = "#3b82f6";
+      if (el.id === selectedId || selectedIds.has(el.id) || isFrameChild) {
+        ctx.strokeStyle = isFrameChild ? "#818cf8" : "#3b82f6";
         ctx.lineWidth = 1.5 / viewport.zoom;
-        ctx.setLineDash(selectedIds.has(el.id) && el.id !== selectedId ? [4 / viewport.zoom, 3 / viewport.zoom] : []);
+        ctx.setLineDash(isFrameChild || (selectedIds.has(el.id) && el.id !== selectedId) ? [4 / viewport.zoom, 3 / viewport.zoom] : []);
         ctx.beginPath();
         ctx.roundRect(x - 3, y - 3, width + 6, height + 6, 6);
         ctx.stroke();
@@ -837,6 +857,7 @@ export function Canvas({
       return;
     }
     if (tool === "eraser") {
+      setIsErasing(true);
       const hit = hitTest(sx, sy);
       if (hit) onDelete(hit.id);
       return;
@@ -913,6 +934,12 @@ export function Canvas({
     const world = screenToWorld(sx, sy);
     onCursorMove(world.x, world.y);
 
+    // Eraser: continuously erase elements under cursor while dragging
+    if (isErasing && tool === "eraser") {
+      const hit = hitTest(sx, sy);
+      if (hit) onDelete(hit.id);
+    }
+
     // Pen stroke: append point while dragging (with small threshold to reduce points)
     if (strokePoints.length > 0) {
       const last = strokePoints[strokePoints.length - 1];
@@ -946,16 +973,24 @@ export function Canvas({
 
     if (dragging) {
       const world = screenToWorld(sx, sy);
-      if (onLocalUpdate) {
-        onLocalUpdate(dragging.id, {
-          x: world.x - dragging.offsetX,
-          y: world.y - dragging.offsetY,
-        });
-      } else {
-        onUpdate(dragging.id, {
-          x: world.x - dragging.offsetX,
-          y: world.y - dragging.offsetY,
-        });
+      const newX = world.x - dragging.offsetX;
+      const newY = world.y - dragging.offsetY;
+      const updateFn = onLocalUpdate ?? onUpdate;
+      updateFn(dragging.id, { x: newX, y: newY });
+
+      const dragEl = elements.find((el) => el.id === dragging.id);
+      if (dragEl?.type === "frame") {
+        const dx = newX - dragEl.x;
+        const dy = newY - dragEl.y;
+        if (dx !== 0 || dy !== 0) {
+          for (const child of elements) {
+            if (child.id === dragging.id || child.type === "connector") continue;
+            const fp = child.properties as { frameId?: string } | undefined;
+            if (fp?.frameId === dragging.id) {
+              updateFn(child.id, { x: child.x + dx, y: child.y + dy });
+            }
+          }
+        }
       }
     }
 
@@ -1080,10 +1115,43 @@ export function Canvas({
       const el = elements.find((e) => e.id === dragging.id);
       if (el) {
         onUpdate(dragging.id, { x: el.x, y: el.y });
+
+        if (el.type === "frame") {
+          for (const child of elements) {
+            if (child.id === el.id || child.type === "connector" || child.type === "frame") continue;
+            const inside = child.x >= el.x && child.y >= el.y &&
+              child.x + child.width <= el.x + el.width && child.y + child.height <= el.y + el.height;
+            const curFrame = (child.properties as { frameId?: string } | undefined)?.frameId;
+            if (inside && curFrame !== el.id) {
+              onUpdate(child.id, { properties: { ...(child.properties as Record<string, Json>), frameId: el.id } as Json });
+            } else if (!inside && curFrame === el.id) {
+              const { frameId: _, ...rest } = (child.properties as Record<string, Json>);
+              onUpdate(child.id, { properties: rest as Json });
+            }
+          }
+        } else {
+          const frames = elements.filter((f) => f.type === "frame" && f.id !== el.id);
+          let assignedFrame: string | undefined;
+          for (const frame of frames) {
+            if (el.x >= frame.x && el.y >= frame.y &&
+                el.x + el.width <= frame.x + frame.width && el.y + el.height <= frame.y + frame.height) {
+              assignedFrame = frame.id;
+              break;
+            }
+          }
+          const curFrame = (el.properties as { frameId?: string } | undefined)?.frameId;
+          if (assignedFrame && curFrame !== assignedFrame) {
+            onUpdate(el.id, { properties: { ...(el.properties as Record<string, Json>), frameId: assignedFrame } as Json });
+          } else if (!assignedFrame && curFrame) {
+            const { frameId: _, ...rest } = (el.properties as Record<string, Json>);
+            onUpdate(el.id, { properties: rest as Json });
+          }
+        }
       }
     }
     setDragging(null);
     setPanning(false);
+    setIsErasing(false);
   }
 
   const handleWheel = useCallback(
@@ -1137,7 +1205,8 @@ export function Canvas({
       (hit.type === "sticky_note" ||
         hit.type === "rectangle" ||
         hit.type === "circle" ||
-        hit.type === "text")
+        hit.type === "text" ||
+        hit.type === "frame")
     ) {
       setSelectedId(hit.id);
       setEditingId(hit.id);
