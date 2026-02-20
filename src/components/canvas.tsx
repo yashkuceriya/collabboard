@@ -254,6 +254,26 @@ function buildCanvasFont(el: BoardElement): string {
   return `${style} ${weight} ${size.canvas}px ${family.canvas}`;
 }
 
+// Text wrapping cache — avoids expensive measureText calls on every frame
+// Cache is keyed by "font|maxWidth|text" and cleared when elements change
+const wrapTextCache = new Map<string, string[]>();
+let wrapTextCacheGeneration = 0;
+
+function wrapTextCached(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, font: string): string[] {
+  const key = `${font}|${Math.round(maxWidth)}|${text}`;
+  const cached = wrapTextCache.get(key);
+  if (cached) return cached;
+  ctx.font = font;
+  const result = wrapText(ctx, text, maxWidth);
+  wrapTextCache.set(key, result);
+  return result;
+}
+
+function invalidateWrapCache() {
+  wrapTextCacheGeneration++;
+  wrapTextCache.clear();
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
 }
@@ -286,6 +306,7 @@ export function Canvas({
 }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRectRef = useRef<DOMRect | null>(null);
   // FPS state updated by the continuous rAF loop
   const [fps, setFps] = useState(0);
   const { effective: themeMode } = useTheme();
@@ -407,11 +428,14 @@ export function Canvas({
 
   // Memoized sorted elements: frames first, then shapes, connectors skipped in draw loop
   const sortedElements = useMemo(
-    () => [...elements].sort((a, b) => {
-      if (a.type === "frame" && b.type !== "frame") return -1;
-      if (a.type !== "frame" && b.type === "frame") return 1;
-      return 0;
-    }),
+    () => {
+      invalidateWrapCache();
+      return [...elements].sort((a, b) => {
+        if (a.type === "frame" && b.type !== "frame") return -1;
+        if (a.type !== "frame" && b.type === "frame") return 1;
+        return 0;
+      });
+    },
     [elements]
   );
 
@@ -472,7 +496,8 @@ export function Canvas({
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
+    if (!canvasRectRef.current) canvasRectRef.current = canvas.getBoundingClientRect();
+    const rect = canvasRectRef.current;
     const newW = Math.round(rect.width * dpr);
     const newH = Math.round(rect.height * dpr);
     if (canvas.width !== newW || canvas.height !== newH) {
@@ -557,8 +582,9 @@ export function Canvas({
 
         const stickyFont = getElementFontSize(el);
         ctx.fillStyle = getElementTextColor(el, isDark);
-        ctx.font = buildCanvasFont(el);
-        const lines = wrapText(ctx, el.text, width - 20);
+        const stickyCanvasFont = buildCanvasFont(el);
+        ctx.font = stickyCanvasFont;
+        const lines = wrapTextCached(ctx, el.text, width - 20, stickyCanvasFont);
         const stickyAlign = getElementTextAlign(el);
         const pad = 10;
         lines.forEach((line, i) => {
@@ -578,8 +604,9 @@ export function Canvas({
         if (el.text) {
           const rectFont = getElementFontSize(el);
           ctx.fillStyle = getElementTextColor(el, isDark);
-          ctx.font = buildCanvasFont(el);
-          const lines = wrapText(ctx, el.text, width - 14);
+          const rectCanvasFont = buildCanvasFont(el);
+          ctx.font = rectCanvasFont;
+          const lines = wrapTextCached(ctx, el.text, width - 14, rectCanvasFont);
           const rectAlign = getElementTextAlign(el);
           const rPad = 7;
           lines.forEach((line, i) => {
@@ -604,8 +631,9 @@ export function Canvas({
         if (el.text) {
           const circFont = getElementFontSize(el);
           ctx.fillStyle = getElementTextColor(el, isDark);
-          ctx.font = buildCanvasFont(el);
-          const lines = wrapText(ctx, el.text, width - 12);
+          const circCanvasFont = buildCanvasFont(el);
+          ctx.font = circCanvasFont;
+          const lines = wrapTextCached(ctx, el.text, width - 12, circCanvasFont);
           const startY = cy - (lines.length * circFont.lineHeight) / 2 + circFont.lineHeight / 2;
           lines.forEach((line, i) => {
             const tw = ctx.measureText(line).width;
@@ -623,8 +651,9 @@ export function Canvas({
         ctx.stroke();
         const textFont = getElementFontSize(el);
         ctx.fillStyle = getElementTextColor(el, isDark);
-        ctx.font = buildCanvasFont(el);
-        const lines = wrapText(ctx, el.text || "Type here…", width - 12);
+        const textCanvasFont = buildCanvasFont(el);
+        ctx.font = textCanvasFont;
+        const lines = wrapTextCached(ctx, el.text || "Type here…", width - 12, textCanvasFont);
         const textAlign = getElementTextAlign(el);
         const tPad = 6;
         lines.forEach((line, i) => {
@@ -929,26 +958,16 @@ export function Canvas({
   // Continuous rAF render loop — runs at display refresh rate (60/120 Hz)
   // like Miro/Figma for maximum responsiveness and accurate FPS measurement
   const fpsRef = useRef(0);
+  const frameCountRef = useRef(0);
   const drawRef = useRef(draw);
   drawRef.current = draw;
   useEffect(() => {
     let running = true;
-    let frameCount = 0;
-    let lastFpsTime = performance.now();
 
     function loop() {
       if (!running) return;
       drawRef.current();
-      frameCount++;
-
-      const now = performance.now();
-      if (now - lastFpsTime >= 1000) {
-        fpsRef.current = frameCount;
-        setFps(frameCount);
-        frameCount = 0;
-        lastFpsTime = now;
-      }
-
+      frameCountRef.current++;
       requestAnimationFrame(loop);
     }
 
@@ -956,11 +975,25 @@ export function Canvas({
     return () => { running = false; };
   }, []);
 
-  // Resize observer — stable (uses ref so it never re-attaches)
+  // FPS sampling on a separate interval — decoupled from the render loop
+  // so setFps doesn't trigger React re-renders inside rAF
+  useEffect(() => {
+    const id = setInterval(() => {
+      fpsRef.current = frameCountRef.current;
+      setFps(frameCountRef.current);
+      frameCountRef.current = 0;
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Resize observer — invalidates cached rect on container resize
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const ro = new ResizeObserver(() => requestAnimationFrame(() => drawRef.current()));
+    const ro = new ResizeObserver(() => {
+      const canvas = canvasRef.current;
+      if (canvas) canvasRectRef.current = canvas.getBoundingClientRect();
+    });
     ro.observe(container);
     return () => ro.disconnect();
   }, []);
@@ -968,7 +1001,7 @@ export function Canvas({
   // Mouse handlers
   function handleMouseDown(e: React.MouseEvent) {
     containerRef.current?.focus({ preventScroll: true });
-    const rect = canvasRef.current?.getBoundingClientRect();
+    const rect = canvasRectRef.current ?? canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
@@ -1047,7 +1080,7 @@ export function Canvas({
   }
 
   function handleMouseMove(e: React.MouseEvent) {
-    const rect = canvasRef.current?.getBoundingClientRect();
+    const rect = canvasRectRef.current ?? canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
@@ -1232,7 +1265,7 @@ export function Canvas({
     }
     if (connectorFromId) {
       if (canvasRef.current && e) {
-        const rect = canvasRef.current.getBoundingClientRect();
+        const rect = canvasRectRef.current ?? canvasRef.current.getBoundingClientRect();
         const sx2 = e.clientX - rect.left;
         const sy2 = e.clientY - rect.top;
         const hit = hitTest(sx2, sy2);
@@ -1299,7 +1332,7 @@ export function Canvas({
       e.preventDefault();
       const canvas = canvasRef.current;
       if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
+      const rect = canvasRectRef.current ?? canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
       const isPinchZoom = e.ctrlKey || e.metaKey;
@@ -1335,7 +1368,7 @@ export function Canvas({
   function handleDoubleClick(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    const rect = canvasRef.current?.getBoundingClientRect();
+    const rect = canvasRectRef.current ?? canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
