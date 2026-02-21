@@ -61,6 +61,8 @@ const MIN_SIZE = 24;
 /** Inset (px) so only elements fully inside the frame bounds are captured */
 const FRAME_INSET = 2;
 
+const ROTATION_HANDLE_OFFSET = 28;
+
 function getResizeHandles(el: BoardElement): { handle: ResizeHandle; x: number; y: number }[] {
   const { x, y, width, height } = el;
   const cx = x + width / 2;
@@ -75,6 +77,18 @@ function getResizeHandles(el: BoardElement): { handle: ResizeHandle; x: number; 
     { handle: "sw", x, y: y + height },
     { handle: "w", x, y: cy },
   ];
+}
+
+function getRotationHandlePosition(el: BoardElement, draftRotation?: number | null): { x: number; y: number } {
+  const cx = el.x + el.width / 2;
+  const cy = el.y + el.height / 2;
+  const rot = draftRotation ?? (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
+  const rad = (rot * Math.PI) / 180;
+  const dist = el.height / 2 + ROTATION_HANDLE_OFFSET;
+  return {
+    x: cx + dist * Math.sin(rad),
+    y: cy - dist * Math.cos(rad),
+  };
 }
 
 function hitTestHandle(
@@ -137,10 +151,24 @@ function clipToEllipseEdge(
 function clipToShapeEdge(el: BoardElement, targetX: number, targetY: number): { x: number; y: number } {
   const cx = el.x + el.width / 2;
   const cy = el.y + el.height / 2;
+  const rot = (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
+  const rad = (rot * Math.PI) / 180;
+
   if (el.type === "circle") {
     return clipToEllipseEdge(cx, cy, el.width / 2, el.height / 2, targetX, targetY);
   }
-  return clipToRectEdge(cx, cy, el.width, el.height, targetX, targetY);
+
+  if (rot === 0) return clipToRectEdge(cx, cy, el.width, el.height, targetX, targetY);
+
+  const cos = Math.cos(-rad);
+  const sin = Math.sin(-rad);
+  const localTx = (targetX - cx) * cos - (targetY - cy) * sin;
+  const localTy = (targetX - cx) * sin + (targetY - cy) * cos;
+  const local = clipToRectEdge(0, 0, el.width, el.height, localTx, localTy);
+  return {
+    x: cx + local.x * Math.cos(rad) - local.y * Math.sin(rad),
+    y: cy + local.x * Math.sin(rad) + local.y * Math.cos(rad),
+  };
 }
 
 const SPATIAL_CELL = 250;
@@ -158,6 +186,18 @@ function buildSpatialIndex(elements: BoardElement[]): Map<string, BoardElement[]
     index.set(key, list);
   }
   return index;
+}
+
+const CONNECTABLE_TYPES = new Set(["sticky_note", "rectangle", "circle", "text", "frame"]);
+
+function getShapeAnchors(el: BoardElement): { x: number; y: number }[] {
+  if (!CONNECTABLE_TYPES.has(el.type)) return [];
+  return [
+    { x: el.x + el.width / 2, y: el.y },
+    { x: el.x + el.width, y: el.y + el.height / 2 },
+    { x: el.x + el.width / 2, y: el.y + el.height },
+    { x: el.x, y: el.y + el.height / 2 },
+  ];
 }
 
 function getConnectorEndpoints(
@@ -178,6 +218,9 @@ function getConnectorEndpoints(
   const end = clipToShapeEdge(toEl, fromCenter.x, fromCenter.y);
   return { x1: start.x, y1: start.y, x2: end.x, y2: end.y };
 }
+
+// Curved connector: quadratic Bezier control point offset (world units). Positive = curve right of line.
+const CONNECTOR_CURVE = 50;
 
 function hexLuminance(hex: string): number {
   const c = hex.replace("#", "");
@@ -343,6 +386,12 @@ export function Canvas({
     width: number;
     height: number;
   } | null>(null);
+  const [rotating, setRotating] = useState<{
+    id: string;
+    startAngle: number;
+    startRotation: number;
+  } | null>(null);
+  const [rotationDraft, setRotationDraft] = useState<number | null>(null);
   const [drawDraft, setDrawDraft] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
   const [connectorFromId, setConnectorFromId] = useState<string | null>(null);
   const [connectorFromPoint, setConnectorFromPoint] = useState<{ x: number; y: number } | null>(null);
@@ -460,6 +509,26 @@ export function Canvas({
 
   const idToElement = useMemo(() => new Map(elements.map((e) => [e.id, e])), [elements]);
 
+  function pointInRotatedBox(
+    wx: number,
+    wy: number,
+    el: { x: number; y: number; width: number; height: number; properties?: unknown }
+  ): boolean {
+    const rot = (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
+    if (rot === 0)
+      return wx >= el.x && wx <= el.x + el.width && wy >= el.y && wy <= el.y + el.height;
+    const cx = el.x + el.width / 2;
+    const cy = el.y + el.height / 2;
+    const rad = (rot * Math.PI) / 180;
+    const cos = Math.cos(-rad);
+    const sin = Math.sin(-rad);
+    const lx = (wx - cx) * cos - (wy - cy) * sin;
+    const ly = (wx - cx) * sin + (wy - cy) * cos;
+    const hw = el.width / 2;
+    const hh = el.height / 2;
+    return lx >= -hw && lx <= hw && ly >= -hh && ly <= hh;
+  }
+
   const hitTest = useCallback(
     (sx: number, sy: number) => {
       const { x, y } = screenToWorld(sx, sy);
@@ -470,18 +539,28 @@ export function Canvas({
       for (let i = boxCandidates.length - 1; i >= 0; i--) {
         const el = boxCandidates[i];
         if (el.type === "freehand") {
-          const pts = (el.properties as { points?: { x: number; y: number }[] })?.points;
-          if (pts && pts.length >= 2) {
-            for (let j = 0; j < pts.length - 1; j++) {
-              if (distanceToSegment(x, y, pts[j].x, pts[j].y, pts[j + 1].x, pts[j + 1].y) <= threshold) return el;
+          const rot = (el.properties as { rotation?: number } | undefined)?.rotation ?? 0;
+          if (rot !== 0) {
+            if (pointInRotatedBox(x, y, el)) return el;
+          } else {
+            const pts = (el.properties as { points?: { x: number; y: number }[] })?.points;
+            if (pts && pts.length >= 2) {
+              for (let j = 0; j < pts.length - 1; j++) {
+                if (distanceToSegment(x, y, pts[j].x, pts[j].y, pts[j + 1].x, pts[j + 1].y) <= threshold) return el;
+              }
             }
           }
         } else if (el.type === "line") {
-          const props = el.properties as { x2?: number; y2?: number } | undefined;
-          const x2 = el.x + (props?.x2 ?? el.width);
-          const y2 = el.y + (props?.y2 ?? el.height);
-          if (distanceToSegment(x, y, el.x, el.y, x2, y2) <= threshold) return el;
-        } else if (x >= el.x && x <= el.x + el.width && y >= el.y && y <= el.y + el.height) {
+          const rot = (el.properties as { rotation?: number } | undefined)?.rotation ?? 0;
+          if (rot !== 0) {
+            if (pointInRotatedBox(x, y, el)) return el;
+          } else {
+            const props = el.properties as { x2?: number; y2?: number } | undefined;
+            const x2 = el.x + (props?.x2 ?? el.width);
+            const y2 = el.y + (props?.y2 ?? el.height);
+            if (distanceToSegment(x, y, el.x, el.y, x2, y2) <= threshold) return el;
+          }
+        } else if (pointInRotatedBox(x, y, el)) {
           return el;
         }
       }
@@ -582,8 +661,10 @@ export function Canvas({
 
       ctx.save();
 
-      const rotation = (el.properties as { rotation?: number } | undefined)?.rotation ?? 0;
-      if (rotation && (el.type === "sticky_note" || el.type === "rectangle" || el.type === "circle" || el.type === "text" || el.type === "frame")) {
+      const baseRotation = (el.properties as { rotation?: number } | undefined)?.rotation ?? 0;
+      const rotation = selectedId === el.id && rotationDraft !== null ? rotationDraft : baseRotation;
+      const rotatableTypes = ["sticky_note", "rectangle", "circle", "text", "frame", "line", "freehand"];
+      if (rotation && rotatableTypes.includes(el.type)) {
         const cx = x + width / 2;
         const cy = y + height / 2;
         ctx.translate(cx, cy);
@@ -822,12 +903,21 @@ export function Canvas({
       ctx.lineJoin = "round";
       const connStyle = (el.properties as { style?: string })?.style;
       if (connStyle === "dashed") ctx.setLineDash([8 / effectiveViewport.zoom, 4 / effectiveViewport.zoom]);
+      const midX = (pts.x1 + pts.x2) / 2;
+      const midY = (pts.y1 + pts.y2) / 2;
+      const dx = pts.x2 - pts.x1;
+      const dy = pts.y2 - pts.y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const perpX = (-dy / len) * CONNECTOR_CURVE;
+      const perpY = (dx / len) * CONNECTOR_CURVE;
+      const ctrlX = midX + perpX;
+      const ctrlY = midY + perpY;
       ctx.beginPath();
       ctx.moveTo(pts.x1, pts.y1);
-      ctx.lineTo(pts.x2, pts.y2);
+      ctx.quadraticCurveTo(ctrlX, ctrlY, pts.x2, pts.y2);
       ctx.stroke();
       if (connStyle === "dashed") ctx.setLineDash([]);
-      const angle = Math.atan2(pts.y2 - pts.y1, pts.x2 - pts.x1);
+      const angle = Math.atan2(pts.y2 - ctrlY, pts.x2 - ctrlX);
       ctx.fillStyle = el.id === selectedId ? "#3b82f6" : strokeColor;
       ctx.beginPath();
       ctx.moveTo(pts.x2, pts.y2);
@@ -878,17 +968,30 @@ export function Canvas({
       ctx.restore();
     }
 
-    // Connector drag preview (from edge point where user clicked to cursor)
+    // Connector drag preview (curved line from edge point to cursor)
     if (connectorFromId && connectorFromPoint && connectorPreview) {
       ctx.save();
       ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 2 / effectiveViewport.zoom;
       ctx.setLineDash([6 / effectiveViewport.zoom, 4 / effectiveViewport.zoom]);
+      const px = connectorFromPoint.x;
+      const py = connectorFromPoint.y;
+      const qx = connectorPreview.x;
+      const qy = connectorPreview.y;
+      const midX = (px + qx) / 2;
+      const midY = (py + qy) / 2;
+      const dx = qx - px;
+      const dy = qy - py;
+      const len = Math.hypot(dx, dy) || 1;
+      const perpX = (-dy / len) * CONNECTOR_CURVE;
+      const perpY = (dx / len) * CONNECTOR_CURVE;
+      const ctrlX = midX + perpX;
+      const ctrlY = midY + perpY;
       ctx.beginPath();
-      ctx.moveTo(connectorFromPoint.x, connectorFromPoint.y);
-      ctx.lineTo(connectorPreview.x, connectorPreview.y);
+      ctx.moveTo(px, py);
+      ctx.quadraticCurveTo(ctrlX, ctrlY, qx, qy);
       ctx.stroke();
-      const angle = Math.atan2(connectorPreview.y - connectorFromPoint.y, connectorPreview.x - connectorFromPoint.x);
+      const angle = Math.atan2(qy - ctrlY, qx - ctrlX);
       ctx.fillStyle = strokeColor;
       ctx.beginPath();
       ctx.moveTo(connectorPreview.x, connectorPreview.y);
@@ -918,16 +1021,15 @@ export function Canvas({
       ctx.restore();
     }
 
-    // Edge anchor dots: when connector started from one object, show connection points on all other connectable elements
-    const connectableTypes = new Set(["sticky_note", "rectangle", "circle", "text", "frame"]);
-    if (tool === "connector") {
+    // Edge anchor dots: in connector mode, or in select mode on hover (so user can drag from anchor without Connect tool)
+    if (tool === "connector" || tool === "select") {
       const targetsToShow =
         connectorFromId
           ? elements.filter(
-              (e) => e.id !== connectorFromId && e.type !== "connector" && e.type !== "freehand" && connectableTypes.has(e.type)
+              (e) => e.id !== connectorFromId && e.type !== "connector" && e.type !== "freehand" && CONNECTABLE_TYPES.has(e.type)
             )
           : hoveredId
-            ? elements.filter((e) => e.id === hoveredId && e.type !== "connector" && e.type !== "freehand")
+            ? elements.filter((e) => e.id === hoveredId && CONNECTABLE_TYPES.has(e.type))
             : [];
       for (const hovEl of targetsToShow) {
         const anchors = [
@@ -1009,6 +1111,33 @@ export function Canvas({
       }
     }
 
+    // Rotation handle — above selected object, free rotate by dragging
+    const rotatableTypes = ["sticky_note", "rectangle", "circle", "text", "frame", "line", "freehand"];
+    if (selectedId) {
+      const el = elements.find((e) => e.id === selectedId);
+      if (el && rotatableTypes.includes(el.type)) {
+        const currentRot = rotationDraft ?? (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
+        const { x: rhx, y: rhy } = getRotationHandlePosition(el, rotationDraft ?? undefined);
+        const cx = el.x + el.width / 2;
+        const cy = el.y + el.height / 2;
+        const r = 10 / effectiveViewport.zoom;
+        ctx.save();
+        ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6";
+        ctx.lineWidth = 1.5 / effectiveViewport.zoom;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(rhx, rhy);
+        ctx.stroke();
+        ctx.fillStyle = isDark ? "#1e293b" : "#fff";
+        ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6";
+        ctx.beginPath();
+        ctx.arc(rhx, rhy, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
     ctx.restore();
 
     // Draw peer cursors (in screen space)
@@ -1045,7 +1174,7 @@ export function Canvas({
       ctx.restore();
     });
     visibleCountRef.current = visibleDrawn;
-  }, [elements, sortedElements, viewport, selectedId, selectedIds, resizing, resizeDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, idToElement]);
+  }, [elements, sortedElements, viewport, selectedId, selectedIds, resizing, resizeDraft, rotating, rotationDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, idToElement]);
 
   // Sampled perf metrics for panel (avoid reading refs during render)
   const [perfVisibleCount, setPerfVisibleCount] = useState(0);
@@ -1136,10 +1265,40 @@ export function Canvas({
             setResizeDraft({ x: el.x, y: el.y, width: el.width, height: el.height });
             return;
           }
+          const rotatableTypes = ["sticky_note", "rectangle", "circle", "text", "frame", "line", "freehand"];
+          if (rotatableTypes.includes(el.type)) {
+            const { x: rhx, y: rhy } = getRotationHandlePosition(el);
+            const screenHandle = worldToScreen(rhx, rhy);
+            if (Math.hypot(sx - screenHandle.x, sy - screenHandle.y) <= 18) {
+              const cx = el.x + el.width / 2;
+              const cy = el.y + el.height / 2;
+              const startAngle = Math.atan2(world.y - cy, world.x - cx);
+              const startRotation = (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
+              setRotating({ id: el.id, startAngle, startRotation });
+              setRotationDraft(startRotation);
+              return;
+            }
+          }
         }
       }
 
+      // Start connector from edge anchor without Connect tool: click on a shape's anchor to begin
       const hit = hitTest(sx, sy);
+      if (hit && CONNECTABLE_TYPES.has(hit.type) && onCreateConnector) {
+        const anchors = getShapeAnchors(hit);
+        const ANCHOR_HIT_RADIUS = 14;
+        for (const anchor of anchors) {
+          const screen = worldToScreen(anchor.x, anchor.y);
+          const dist = Math.hypot(sx - screen.x, sy - screen.y);
+          if (dist <= ANCHOR_HIT_RADIUS) {
+            setConnectorFromId(hit.id);
+            setConnectorFromPoint(anchor);
+            setConnectorPreview({ x: world.x, y: world.y });
+            return;
+          }
+        }
+      }
+
       if (hit) {
         if (e.shiftKey) {
           setSelectedIds((prev) => {
@@ -1192,6 +1351,20 @@ export function Canvas({
     const world = screenToWorld(sx, sy);
     onCursorMove(world.x, world.y);
 
+    if (rotating) {
+      const el = elements.find((e) => e.id === rotating.id);
+      if (el) {
+        const cx = el.x + el.width / 2;
+        const cy = el.y + el.height / 2;
+        const currentAngle = Math.atan2(world.y - cy, world.x - cx);
+        let deltaDeg = ((currentAngle - rotating.startAngle) * 180) / Math.PI;
+        while (deltaDeg > 180) deltaDeg -= 360;
+        while (deltaDeg < -180) deltaDeg += 360;
+        setRotationDraft(rotating.startRotation + deltaDeg);
+      }
+      return;
+    }
+
     // Eraser: continuously erase elements under cursor while dragging
     if (isErasing && tool === "eraser") {
       const hit = hitTest(sx, sy);
@@ -1206,7 +1379,7 @@ export function Canvas({
     }
 
     // Hover detection for cursor feedback
-    if (!dragging && !panning && !resizing && !drawDraft && !connectorFromId && (tool === "select" || tool === "connector")) {
+    if (!dragging && !panning && !resizing && !drawDraft && !connectorFromId && !rotating && (tool === "select" || tool === "connector")) {
       const hit = hitTest(sx, sy);
       setHoveredId(hit?.id ?? null);
     }
@@ -1310,6 +1483,18 @@ export function Canvas({
   }
 
   function handleMouseUp(e?: React.MouseEvent) {
+    if (rotating) {
+      const el = elements.find((x) => x.id === rotating.id);
+      if (el) {
+        let finalRot = rotationDraft ?? rotating.startRotation;
+        while (finalRot > 180) finalRot -= 360;
+        while (finalRot < -180) finalRot += 360;
+        const props = { ...(el.properties as Record<string, unknown>), rotation: finalRot };
+        onUpdate(rotating.id, { properties: props as BoardElement["properties"] });
+      }
+      setRotating(null);
+      setRotationDraft(null);
+    }
     if (marquee) {
       const mx1 = Math.min(marquee.startX, marquee.currentX);
       const my1 = Math.min(marquee.startY, marquee.currentY);
@@ -1577,7 +1762,7 @@ export function Canvas({
 
   // Compute cursor style
   const cursorStyle = (() => {
-    if (drawDraft || connectorFromId) return "crosshair";
+    if (drawDraft || connectorFromId || rotating) return "crosshair";
     if (tool !== "select") return "crosshair";
     if (resizing) {
       const map: Record<ResizeHandle, string> = {

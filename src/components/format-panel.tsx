@@ -223,24 +223,31 @@ export function FormatPanel({
           </section>
         )}
 
-        {/* Rotation */}
+        {/* Rotation — relative steps so any angle is reachable */}
         {onRotationChange && (
           <section>
             <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Rotation</label>
             <div className="flex flex-wrap gap-1.5 items-center">
-              {[-15, -5, 0, 5, 15].map((deg) => (
+              {[
+                { label: "−15°", delta: -15 },
+                { label: "−5°", delta: -5 },
+                { label: "0°", delta: 0, absolute: true },
+                { label: "+5°", delta: 5 },
+                { label: "+15°", delta: 15 },
+              ].map(({ label, delta, absolute }) => (
                 <button
-                  key={deg}
+                  key={label}
                   type="button"
-                  onClick={() => onRotationChange(deg)}
+                  onClick={() => onRotationChange(absolute ? 0 : Math.round(rotation) + delta)}
                   className={`px-2.5 py-1.5 text-xs font-medium rounded-lg ${btn} ${
-                    Math.round(rotation) === deg ? btnActive : ""
+                    absolute && Math.round(rotation) === 0 ? btnActive : ""
                   }`}
                 >
-                  {deg}°
+                  {label}
                 </button>
               ))}
             </div>
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">Current: {Math.round(rotation)}°</p>
           </section>
         )}
 
