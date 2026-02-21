@@ -1193,7 +1193,7 @@ export function Canvas({
       ctx.restore();
     });
     visibleCountRef.current = visibleDrawn;
-  }, [elements, sortedElements, viewport, selectedId, selectedIds, resizing, resizeDraft, rotating, rotationDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, idToElement]);
+  }, [elements, sortedElements, viewport, selectedId, selectedIds, resizing, resizeDraft, rotationDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, idToElement]);
 
   // Sampled perf metrics for panel (avoid reading refs during render)
   const [perfVisibleCount, setPerfVisibleCount] = useState(0);
