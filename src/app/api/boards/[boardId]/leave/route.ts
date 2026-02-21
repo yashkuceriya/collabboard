@@ -7,13 +7,17 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 /** DELETE: leave a shared board (remove current user from board_members). Board stays for others. */
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ boardId: string }> }
 ) {
   const { boardId } = await params;
   if (!boardId) return NextResponse.json({ error: "boardId required" }, { status: 400 });
 
-  const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
+  const body = await req.json().catch(() => ({}));
+  const { accessToken } = body as { accessToken?: string };
+  const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+    global: accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : undefined,
+  });
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
