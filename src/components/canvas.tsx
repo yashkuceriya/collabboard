@@ -61,7 +61,16 @@ const MIN_SIZE = 24;
 /** Inset (px) so only elements fully inside the frame bounds are captured */
 const FRAME_INSET = 2;
 
-const ROTATION_HANDLE_OFFSET = 48;
+const ROTATION_HANDLE_CORNER_OFFSET = 14;
+
+function rotatePoint(px: number, py: number, cx: number, cy: number, rad: number): { x: number; y: number } {
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return {
+    x: cx + (px - cx) * cos - (py - cy) * sin,
+    y: cy + (px - cx) * sin + (py - cy) * cos,
+  };
+}
 
 function getResizeHandles(el: BoardElement): { handle: ResizeHandle; x: number; y: number }[] {
   const { x, y, width, height } = el;
@@ -84,10 +93,15 @@ function getRotationHandlePosition(el: BoardElement, draftRotation?: number | nu
   const cy = el.y + el.height / 2;
   const rot = draftRotation ?? (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
   const rad = (rot * Math.PI) / 180;
-  const dist = el.height / 2 + ROTATION_HANDLE_OFFSET;
+  const cornerX = el.x + el.width;
+  const cornerY = el.y;
+  const rotated = rotatePoint(cornerX, cornerY, cx, cy, rad);
+  const dx = rotated.x - cx;
+  const dy = rotated.y - cy;
+  const dist = Math.hypot(dx, dy) || 1;
   return {
-    x: cx + dist * Math.sin(rad),
-    y: cy - dist * Math.cos(rad),
+    x: rotated.x + (dx / dist) * ROTATION_HANDLE_CORNER_OFFSET,
+    y: rotated.y + (dy / dist) * ROTATION_HANDLE_CORNER_OFFSET,
   };
 }
 
@@ -192,12 +206,18 @@ const CONNECTABLE_TYPES = new Set(["sticky_note", "rectangle", "circle", "text",
 
 function getShapeAnchors(el: BoardElement): { x: number; y: number }[] {
   if (!CONNECTABLE_TYPES.has(el.type)) return [];
-  return [
-    { x: el.x + el.width / 2, y: el.y },
-    { x: el.x + el.width, y: el.y + el.height / 2 },
-    { x: el.x + el.width / 2, y: el.y + el.height },
-    { x: el.x, y: el.y + el.height / 2 },
+  const cx = el.x + el.width / 2;
+  const cy = el.y + el.height / 2;
+  const rot = (el.properties as { rotation?: number } | undefined)?.rotation ?? 0;
+  const localAnchors = [
+    { x: cx, y: el.y },
+    { x: el.x + el.width, y: cy },
+    { x: cx, y: el.y + el.height },
+    { x: el.x, y: cy },
   ];
+  if (rot === 0) return localAnchors;
+  const rad = (rot * Math.PI) / 180;
+  return localAnchors.map((a) => rotatePoint(a.x, a.y, cx, cy, rad));
 }
 
 function getConnectorEndpoints(
@@ -892,43 +912,66 @@ export function Canvas({
       if (el.type !== "connector") continue;
       const pts = getConnectorEndpoints(el, idToElement);
       if (!pts) continue;
-      const cx = Math.min(pts.x1, pts.x2);
-      const cy = Math.min(pts.y1, pts.y2);
-      const cw = Math.abs(pts.x2 - pts.x1);
-      const ch = Math.abs(pts.y2 - pts.y1);
-      if (!inView(cx, cy, cw || 1, ch || 1)) continue;
+      const bx = Math.min(pts.x1, pts.x2);
+      const by = Math.min(pts.y1, pts.y2);
+      const bw = Math.abs(pts.x2 - pts.x1);
+      const bh = Math.abs(pts.y2 - pts.y1);
+      if (!inView(bx, by, bw || 1, bh || 1)) continue;
       ctx.save();
       const connColor = el.color && el.color !== "#64748b" ? el.color : (el.id === selectedId ? "#3b82f6" : strokeColor);
       ctx.strokeStyle = el.id === selectedId ? "#3b82f6" : connColor;
       ctx.lineWidth = (el.id === selectedId ? 2.5 : 2) / effectiveViewport.zoom;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
-      const connStyle = (el.properties as { style?: string })?.style;
+      const connProps = el.properties as { style?: string; route?: string } | undefined;
+      const connStyle = connProps?.style;
+      const connRoute = connProps?.route ?? "curved";
       if (connStyle === "dashed") ctx.setLineDash([8 / effectiveViewport.zoom, 4 / effectiveViewport.zoom]);
-      const midX = (pts.x1 + pts.x2) / 2;
-      const midY = (pts.y1 + pts.y2) / 2;
-      const dx = pts.x2 - pts.x1;
-      const dy = pts.y2 - pts.y1;
-      const len = Math.hypot(dx, dy) || 1;
-      const curve = getConnectorCurve(len);
-      const perpX = (-dy / len) * curve;
-      const perpY = (dx / len) * curve;
-      const ctrlX = midX + perpX;
-      const ctrlY = midY + perpY;
-      ctx.beginPath();
-      ctx.moveTo(pts.x1, pts.y1);
-      ctx.quadraticCurveTo(ctrlX, ctrlY, pts.x2, pts.y2);
-      ctx.stroke();
+
+      let arrowAngle: number;
+
+      if (connRoute === "straight") {
+        ctx.beginPath();
+        ctx.moveTo(pts.x1, pts.y1);
+        ctx.lineTo(pts.x2, pts.y2);
+        ctx.stroke();
+        arrowAngle = Math.atan2(pts.y2 - pts.y1, pts.x2 - pts.x1);
+      } else if (connRoute === "orthogonal") {
+        const midX = (pts.x1 + pts.x2) / 2;
+        ctx.beginPath();
+        ctx.moveTo(pts.x1, pts.y1);
+        ctx.lineTo(midX, pts.y1);
+        ctx.lineTo(midX, pts.y2);
+        ctx.lineTo(pts.x2, pts.y2);
+        ctx.stroke();
+        arrowAngle = Math.atan2(0, pts.x2 > midX ? 1 : -1);
+      } else {
+        const midX = (pts.x1 + pts.x2) / 2;
+        const midY = (pts.y1 + pts.y2) / 2;
+        const dx = pts.x2 - pts.x1;
+        const dy = pts.y2 - pts.y1;
+        const len = Math.hypot(dx, dy) || 1;
+        const curve = getConnectorCurve(len);
+        const perpX = (-dy / len) * curve;
+        const perpY = (dx / len) * curve;
+        const ctrlX = midX + perpX;
+        const ctrlY = midY + perpY;
+        ctx.beginPath();
+        ctx.moveTo(pts.x1, pts.y1);
+        ctx.quadraticCurveTo(ctrlX, ctrlY, pts.x2, pts.y2);
+        ctx.stroke();
+        arrowAngle = Math.atan2(pts.y2 - ctrlY, pts.x2 - ctrlX);
+      }
+
       if (connStyle === "dashed") ctx.setLineDash([]);
-      const angle = Math.atan2(pts.y2 - ctrlY, pts.x2 - ctrlX);
       const arrowColor = el.id === selectedId ? "#3b82f6" : strokeColor;
       ctx.fillStyle = arrowColor;
       ctx.strokeStyle = isDark ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.9)";
       ctx.lineWidth = (1.5 / effectiveViewport.zoom);
       ctx.beginPath();
       ctx.moveTo(pts.x2, pts.y2);
-      ctx.lineTo(pts.x2 - arrowLen * Math.cos(angle - 0.4), pts.y2 - arrowLen * Math.sin(angle - 0.4));
-      ctx.lineTo(pts.x2 - arrowLen * Math.cos(angle + 0.4), pts.y2 - arrowLen * Math.sin(angle + 0.4));
+      ctx.lineTo(pts.x2 - arrowLen * Math.cos(arrowAngle - 0.4), pts.y2 - arrowLen * Math.sin(arrowAngle - 0.4));
+      ctx.lineTo(pts.x2 - arrowLen * Math.cos(arrowAngle + 0.4), pts.y2 - arrowLen * Math.sin(arrowAngle + 0.4));
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
@@ -1040,12 +1083,7 @@ export function Canvas({
             ? elements.filter((e) => e.id === hoveredId && CONNECTABLE_TYPES.has(e.type))
             : [];
       for (const hovEl of targetsToShow) {
-        const anchors = [
-          { x: hovEl.x + hovEl.width / 2, y: hovEl.y },
-          { x: hovEl.x + hovEl.width, y: hovEl.y + hovEl.height / 2 },
-          { x: hovEl.x + hovEl.width / 2, y: hovEl.y + hovEl.height },
-          { x: hovEl.x, y: hovEl.y + hovEl.height / 2 },
-        ];
+        const anchors = getShapeAnchors(hovEl);
         ctx.save();
         ctx.fillStyle = "#3b82f6";
         ctx.strokeStyle = isDark ? "#1f2937" : "#fff";
@@ -1155,7 +1193,7 @@ export function Canvas({
       ctx.restore();
     });
     visibleCountRef.current = visibleDrawn;
-  }, [elements, sortedElements, viewport, selectedId, selectedIds, resizing, resizeDraft, rotating, rotationDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, idToElement]);
+  }, [elements, sortedElements, viewport, selectedId, selectedIds, resizing, resizeDraft, rotationDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, idToElement]);
 
   // Sampled perf metrics for panel (avoid reading refs during render)
   const [perfVisibleCount, setPerfVisibleCount] = useState(0);
@@ -1341,7 +1379,9 @@ export function Canvas({
         let deltaDeg = ((currentAngle - rotating.startAngle) * 180) / Math.PI;
         while (deltaDeg > 180) deltaDeg -= 360;
         while (deltaDeg < -180) deltaDeg += 360;
-        setRotationDraft(rotating.startRotation + deltaDeg);
+        let newRot = rotating.startRotation + deltaDeg;
+        if (e.shiftKey) newRot = Math.round(newRot / 15) * 15;
+        setRotationDraft(newRot);
       }
       return;
     }
@@ -1372,7 +1412,22 @@ export function Canvas({
       setMarquee((m) => (m ? { ...m, currentX: world.x, currentY: world.y } : null));
     }
     if (connectorFromId) {
-      setConnectorPreview({ x: world.x, y: world.y });
+      const SNAP_THRESHOLD = 24 / viewport.zoom;
+      let snapPt: { x: number; y: number } | null = null;
+      for (const el of elements) {
+        if (el.id === connectorFromId || el.type === "connector" || el.type === "freehand" || !CONNECTABLE_TYPES.has(el.type)) continue;
+        const ecx = el.x + el.width / 2;
+        const ecy = el.y + el.height / 2;
+        const dist = Math.hypot(world.x - ecx, world.y - ecy);
+        const maxDist = Math.hypot(el.width, el.height) / 2 + SNAP_THRESHOLD;
+        if (dist > maxDist) continue;
+        const edgePt = clipToShapeEdge(el, world.x, world.y);
+        if (Math.hypot(world.x - edgePt.x, world.y - edgePt.y) <= SNAP_THRESHOLD) {
+          snapPt = edgePt;
+          break;
+        }
+      }
+      setConnectorPreview(snapPt ?? { x: world.x, y: world.y });
     }
 
     if (panning) {
@@ -1408,56 +1463,79 @@ export function Canvas({
 
     if (resizing) {
       const { startEl, handle } = resizing;
+      const el = elements.find((e) => e.id === resizing.id);
+      const rot = (el?.properties as { rotation?: number } | undefined)?.rotation ?? 0;
+
       let x: number, y: number, width: number, height: number;
-      switch (handle) {
-        case "se":
-          x = startEl.x;
-          y = startEl.y;
-          width = clampSize(world.x - startEl.x);
-          height = clampSize(world.y - startEl.y);
-          break;
-        case "s":
-          x = startEl.x;
-          y = startEl.y;
-          width = startEl.width;
-          height = clampSize(world.y - startEl.y);
-          break;
-        case "e":
-          x = startEl.x;
-          y = startEl.y;
-          width = clampSize(world.x - startEl.x);
-          height = startEl.height;
-          break;
-        case "sw":
-          x = world.x;
-          y = startEl.y;
-          width = clampSize(startEl.x + startEl.width - world.x);
-          height = clampSize(world.y - startEl.y);
-          break;
-        case "w":
-          x = world.x;
-          y = startEl.y;
-          width = clampSize(startEl.x + startEl.width - world.x);
-          height = startEl.height;
-          break;
-        case "nw":
-          x = world.x;
-          y = world.y;
-          width = clampSize(startEl.x + startEl.width - world.x);
-          height = clampSize(startEl.y + startEl.height - world.y);
-          break;
-        case "n":
-          x = startEl.x;
-          y = world.y;
-          width = startEl.width;
-          height = clampSize(startEl.y + startEl.height - world.y);
-          break;
-        case "ne":
-          x = startEl.x;
-          y = world.y;
-          width = clampSize(world.x - startEl.x);
-          height = clampSize(startEl.y + startEl.height - world.y);
-          break;
+
+      if (rot !== 0) {
+        const rad = (rot * Math.PI) / 180;
+        const sCx = startEl.x + startEl.width / 2;
+        const sCy = startEl.y + startEl.height / 2;
+        const local = rotatePoint(world.x, world.y, sCx, sCy, -rad);
+        const lx = local.x;
+        const ly = local.y;
+
+        let newW = startEl.width;
+        let newH = startEl.height;
+        let newCx = sCx;
+        let newCy = sCy;
+
+        if (handle === "se" || handle === "e" || handle === "ne") {
+          newW = clampSize(lx - (startEl.x));
+        }
+        if (handle === "sw" || handle === "w" || handle === "nw") {
+          newW = clampSize((startEl.x + startEl.width) - lx);
+          newCx = sCx + (startEl.width - newW) / 2;
+        }
+        if (handle === "se" || handle === "s" || handle === "sw") {
+          newH = clampSize(ly - (startEl.y));
+        }
+        if (handle === "ne" || handle === "n" || handle === "nw") {
+          newH = clampSize((startEl.y + startEl.height) - ly);
+          newCy = sCy + (startEl.height - newH) / 2;
+        }
+
+        const finalCenter = rotatePoint(newCx, newCy, sCx, sCy, rad);
+        x = finalCenter.x - newW / 2;
+        y = finalCenter.y - newH / 2;
+        width = newW;
+        height = newH;
+      } else {
+        switch (handle) {
+          case "se":
+            x = startEl.x; y = startEl.y;
+            width = clampSize(world.x - startEl.x); height = clampSize(world.y - startEl.y);
+            break;
+          case "s":
+            x = startEl.x; y = startEl.y;
+            width = startEl.width; height = clampSize(world.y - startEl.y);
+            break;
+          case "e":
+            x = startEl.x; y = startEl.y;
+            width = clampSize(world.x - startEl.x); height = startEl.height;
+            break;
+          case "sw":
+            x = world.x; y = startEl.y;
+            width = clampSize(startEl.x + startEl.width - world.x); height = clampSize(world.y - startEl.y);
+            break;
+          case "w":
+            x = world.x; y = startEl.y;
+            width = clampSize(startEl.x + startEl.width - world.x); height = startEl.height;
+            break;
+          case "nw":
+            x = world.x; y = world.y;
+            width = clampSize(startEl.x + startEl.width - world.x); height = clampSize(startEl.y + startEl.height - world.y);
+            break;
+          case "n":
+            x = startEl.x; y = world.y;
+            width = startEl.width; height = clampSize(startEl.y + startEl.height - world.y);
+            break;
+          case "ne":
+            x = startEl.x; y = world.y;
+            width = clampSize(world.x - startEl.x); height = clampSize(startEl.y + startEl.height - world.y);
+            break;
+        }
       }
       setResizeDraft({ x, y, width, height });
     }
@@ -1961,19 +2039,21 @@ export function Canvas({
         const rotatableTypes = ["sticky_note", "rectangle", "circle", "text", "frame", "line", "freehand"];
         const el = selectedElement;
         if (!el || !rotatableTypes.includes(el.type)) return null;
-        const currentRot = rotationDraft ?? (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
         const { x: rhx, y: rhy } = getRotationHandlePosition(el, rotationDraft ?? undefined);
         const cx = el.x + el.width / 2;
         const cy = el.y + el.height / 2;
-        const screenCenter = worldToScreen(cx, cy);
+        const rot = rotationDraft ?? (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
+        const rad = (rot * Math.PI) / 180;
+        const cornerWorld = rotatePoint(el.x + el.width, el.y, cx, cy, rad);
+        const screenCorner = worldToScreen(cornerWorld.x, cornerWorld.y);
         const screenHandle = worldToScreen(rhx, rhy);
-        const handleRadius = 18;
+        const handleRadius = 14;
         return (
           <div className="absolute inset-0 pointer-events-none z-30" aria-hidden>
             <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: "visible" }}>
               <line
-                x1={screenCenter.x}
-                y1={screenCenter.y}
+                x1={screenCorner.x}
+                y1={screenCorner.y}
                 x2={screenHandle.x}
                 y2={screenHandle.y}
                 stroke={isDark ? "#60a5fa" : "#3b82f6"}
@@ -1982,12 +2062,13 @@ export function Canvas({
               />
             </svg>
             <div
-              className="absolute rounded-full border-2 bg-white dark:bg-slate-800 border-blue-500 dark:border-blue-400 cursor-grab active:cursor-grabbing shadow-md pointer-events-auto"
+              className="absolute rounded-full border-2 bg-white dark:bg-slate-800 border-blue-500 dark:border-blue-400 shadow-md pointer-events-auto"
               style={{
                 left: screenHandle.x - handleRadius,
                 top: screenHandle.y - handleRadius,
                 width: handleRadius * 2,
                 height: handleRadius * 2,
+                cursor: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2'%3E%3Cpath d='M4 12a8 8 0 0 1 14.3-4.8'/%3E%3Cpath d='M20 4v4h-4'/%3E%3C/svg%3E\") 12 12, grab",
               }}
               onMouseDown={(e) => {
                 e.stopPropagation();
@@ -2082,6 +2163,51 @@ export function Canvas({
           </div>
         );
       })()}
+      {/* Connector mini-toolbar — line type + delete for selected connector */}
+      {selectedId && !editingId && selectedElement && selectedElement.type === "connector" && (() => {
+        const el = selectedElement;
+        const pts = getConnectorEndpoints(el, idToElement);
+        if (!pts) return null;
+        const anchor = worldToScreen((pts.x1 + pts.x2) / 2, (pts.y1 + pts.y2) / 2 - 20);
+        const connProps = el.properties as Record<string, string> | undefined;
+        const currentRoute = (connProps?.route || "curved") as "straight" | "orthogonal" | "curved";
+        const mergeProps = (patch: Record<string, unknown>) => {
+          const existingProps = (el.properties as Record<string, unknown>) || {};
+          onUpdate(el.id, { properties: { ...existingProps, ...patch } as BoardElement["properties"] });
+        };
+        const routeBtn = "px-2 py-1 text-xs font-medium rounded-md border transition-colors";
+        const routeActive = "bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300";
+        const routeInactive = "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700";
+        return (
+          <div
+            className="absolute z-20 flex items-center gap-1.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm px-2 py-1.5 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700"
+            style={{ left: anchor.x, top: anchor.y, transform: "translate(-50%, -100%)" }}
+          >
+            {(["straight", "orthogonal", "curved"] as const).map((route) => (
+              <button
+                key={route}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); mergeProps({ route }); }}
+                onMouseDown={(e) => e.stopPropagation()}
+                className={`${routeBtn} ${currentRoute === route ? routeActive : routeInactive}`}
+              >
+                {route === "orthogonal" ? "Elbow" : route.charAt(0).toUpperCase() + route.slice(1)}
+              </button>
+            ))}
+            {canDeleteSelected && (
+              <button
+                type="button"
+                onClick={() => { onDelete(selectedId!); setSelectedId(null); }}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-md border border-red-200 dark:border-red-800"
+                title="Delete"
+              >
+                Delete
+              </button>
+            )}
+          </div>
+        );
+      })()}
       {selectedId && !editingId && !canDeleteSelected && selectedElement && selectedElement.type !== "connector" && (() => {
         const el = selectedElement;
         const anchor = worldToScreen(el.x + el.width / 2, el.y - 8);
@@ -2131,6 +2257,10 @@ export function Canvas({
               })}
               rotation={typeof props?.rotation === "number" ? props.rotation : 0}
               onRotationChange={(r) => mergeProps({ rotation: r })}
+              {...(el.type === "connector" && {
+                connectorRoute: ((props?.route as string) || "curved") as "straight" | "orthogonal" | "curved",
+                onConnectorRouteChange: (route: "straight" | "orthogonal" | "curved") => mergeProps({ route }),
+              })}
               onClose={() => setFormatPanelOpen(false)}
             />
           </div>

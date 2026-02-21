@@ -299,9 +299,10 @@ LATENCY: Prefer fewer tool rounds. Use createTemplate, generateIdeas, or createB
           fromId: z.string().uuid().describe("UUID of the source element (from getBoardState)"),
           toId: z.string().uuid().describe("UUID of the target element (from getBoardState)"),
           style: z.enum(["solid", "dashed"]).describe("Line style").optional(),
+          route: z.enum(["straight", "orthogonal", "curved"]).describe("Line routing: straight, orthogonal (elbowed), or curved").optional(),
           color: z.string().describe("Hex color for the connector").optional(),
         }),
-        execute: async ({ fromId, toId, style, color }) => {
+        execute: async ({ fromId, toId, style, route, color }) => {
           if (fromId === toId) return { error: "Source and target must be different elements." };
           const fromEl = await getElementById(fromId);
           const toEl = await getElementById(toId);
@@ -320,7 +321,7 @@ LATENCY: Prefer fewer tool rounds. Use createTemplate, generateIdeas, or createB
               height: 0,
               color: color ?? "#64748b",
               text: "",
-              properties: { fromId, toId, style: style ?? "solid" },
+              properties: { fromId, toId, style: style ?? "solid", route: route ?? "curved" },
               created_by: userId,
             } as never)
             .select("id")
