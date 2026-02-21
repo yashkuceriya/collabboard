@@ -1,6 +1,6 @@
 # CollabBoard
 
-Real-time collaborative whiteboard. Built with Next.js and Supabase.  
+**Real-time collaborative whiteboard with an AI assistant** — for teams (brainstorming, onboarding, retrospectives) and for **interview prep** (interview-mode boards where the AI acts like an interviewer). Built with Next.js and Supabase. Value from the start: structured AI output (e.g. onboarding plan for a new sales hire, retros with What Went Well / What Didn't / Action Items) and real-time collaboration.  
 **MVP** = 9 items (see [MVP-CHECKLIST.md](./MVP-CHECKLIST.md)); **AI board agent** = full app (optional, enable with `NEXT_PUBLIC_ENABLE_AI=true`).
 
 **MVP scope:** Infinite board (pan/zoom) · Sticky notes (editable text) · Shapes (rectangle, circle) · Create/move/edit objects · **Delete:** select any object then press Delete key or use the Delete button · Real-time sync · Multiplayer cursors with labels · Presence (who’s online) · Auth · Deployed & publicly accessible.

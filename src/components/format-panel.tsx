@@ -13,6 +13,8 @@ interface FormatPanelProps extends ColorPickerProps {
   onClose: () => void;
   rotation?: number;
   onRotationChange?: (degrees: number) => void;
+  connectorRoute?: "straight" | "orthogonal" | "curved";
+  onConnectorRouteChange?: (route: "straight" | "orthogonal" | "curved") => void;
 }
 
 export function FormatPanel({
@@ -33,6 +35,8 @@ export function FormatPanel({
   onTextAlignChange,
   rotation = 0,
   onRotationChange,
+  connectorRoute,
+  onConnectorRouteChange,
   onClose,
 }: FormatPanelProps) {
   const colors = elementType === "sticky_note" ? STICKY_COLORS : SHAPE_COLORS;
@@ -248,6 +252,27 @@ export function FormatPanel({
               ))}
             </div>
             <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">Current: {Math.round(rotation)}°</p>
+          </section>
+        )}
+
+        {/* Connector Route */}
+        {onConnectorRouteChange && (
+          <section>
+            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Line type</label>
+            <div className="flex gap-1.5 flex-wrap">
+              {(["straight", "orthogonal", "curved"] as const).map((route) => (
+                <button
+                  key={route}
+                  type="button"
+                  onClick={() => onConnectorRouteChange(route)}
+                  className={`px-2.5 py-1.5 text-xs font-medium capitalize rounded-lg ${btn} ${
+                    (connectorRoute || "curved") === route ? btnActive : ""
+                  }`}
+                >
+                  {route === "orthogonal" ? "Elbow" : route.charAt(0).toUpperCase() + route.slice(1)}
+                </button>
+              ))}
+            </div>
           </section>
         )}
 
