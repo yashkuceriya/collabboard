@@ -61,7 +61,7 @@ const MIN_SIZE = 24;
 /** Inset (px) so only elements fully inside the frame bounds are captured */
 const FRAME_INSET = 2;
 
-const ROTATION_HANDLE_OFFSET = 28;
+const ROTATION_HANDLE_OFFSET = 48;
 
 function getResizeHandles(el: BoardElement): { handle: ResizeHandle; x: number; y: number }[] {
   const { x, y, width, height } = el;
@@ -219,8 +219,10 @@ function getConnectorEndpoints(
   return { x1: start.x, y1: start.y, x2: end.x, y2: end.y };
 }
 
-// Curved connector: quadratic Bezier control point offset (world units). Positive = curve right of line.
-const CONNECTOR_CURVE = 50;
+// Curved connector: quadratic Bezier control point offset (world units). Miro-style: curve scales with distance.
+function getConnectorCurve(distance: number): number {
+  return Math.min(56, Math.max(20, distance * 0.18));
+}
 
 function hexLuminance(hex: string): number {
   const c = hex.replace("#", "");
@@ -908,8 +910,9 @@ export function Canvas({
       const dx = pts.x2 - pts.x1;
       const dy = pts.y2 - pts.y1;
       const len = Math.hypot(dx, dy) || 1;
-      const perpX = (-dy / len) * CONNECTOR_CURVE;
-      const perpY = (dx / len) * CONNECTOR_CURVE;
+      const curve = getConnectorCurve(len);
+      const perpX = (-dy / len) * curve;
+      const perpY = (dx / len) * curve;
       const ctrlX = midX + perpX;
       const ctrlY = midY + perpY;
       ctx.beginPath();
@@ -918,13 +921,17 @@ export function Canvas({
       ctx.stroke();
       if (connStyle === "dashed") ctx.setLineDash([]);
       const angle = Math.atan2(pts.y2 - ctrlY, pts.x2 - ctrlX);
-      ctx.fillStyle = el.id === selectedId ? "#3b82f6" : strokeColor;
+      const arrowColor = el.id === selectedId ? "#3b82f6" : strokeColor;
+      ctx.fillStyle = arrowColor;
+      ctx.strokeStyle = isDark ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.9)";
+      ctx.lineWidth = (1.5 / effectiveViewport.zoom);
       ctx.beginPath();
       ctx.moveTo(pts.x2, pts.y2);
       ctx.lineTo(pts.x2 - arrowLen * Math.cos(angle - 0.4), pts.y2 - arrowLen * Math.sin(angle - 0.4));
       ctx.lineTo(pts.x2 - arrowLen * Math.cos(angle + 0.4), pts.y2 - arrowLen * Math.sin(angle + 0.4));
       ctx.closePath();
       ctx.fill();
+      ctx.stroke();
       ctx.restore();
     }
 
@@ -983,8 +990,9 @@ export function Canvas({
       const dx = qx - px;
       const dy = qy - py;
       const len = Math.hypot(dx, dy) || 1;
-      const perpX = (-dy / len) * CONNECTOR_CURVE;
-      const perpY = (dx / len) * CONNECTOR_CURVE;
+      const curve = getConnectorCurve(len);
+      const perpX = (-dy / len) * curve;
+      const perpY = (dx / len) * curve;
       const ctrlX = midX + perpX;
       const ctrlY = midY + perpY;
       ctx.beginPath();
@@ -1108,33 +1116,6 @@ export function Canvas({
         ctx.shadowColor = "transparent";
         ctx.shadowBlur = 0;
         ctx.shadowOffsetY = 0;
-      }
-    }
-
-    // Rotation handle — above selected object, free rotate by dragging
-    const rotatableTypes = ["sticky_note", "rectangle", "circle", "text", "frame", "line", "freehand"];
-    if (selectedId) {
-      const el = elements.find((e) => e.id === selectedId);
-      if (el && rotatableTypes.includes(el.type)) {
-        const currentRot = rotationDraft ?? (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
-        const { x: rhx, y: rhy } = getRotationHandlePosition(el, rotationDraft ?? undefined);
-        const cx = el.x + el.width / 2;
-        const cy = el.y + el.height / 2;
-        const r = 10 / effectiveViewport.zoom;
-        ctx.save();
-        ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6";
-        ctx.lineWidth = 1.5 / effectiveViewport.zoom;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(rhx, rhy);
-        ctx.stroke();
-        ctx.fillStyle = isDark ? "#1e293b" : "#fff";
-        ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6";
-        ctx.beginPath();
-        ctx.arc(rhx, rhy, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
       }
     }
 
@@ -1974,6 +1955,58 @@ export function Canvas({
           </div>
         </div>
       )}
+
+      {/* Rotation handle overlay — above toolbar (z-30) so it stays visible and clickable */}
+      {selectedId && !editingId && selectedElement && selectedElement.type !== "connector" && (() => {
+        const rotatableTypes = ["sticky_note", "rectangle", "circle", "text", "frame", "line", "freehand"];
+        const el = selectedElement;
+        if (!el || !rotatableTypes.includes(el.type)) return null;
+        const currentRot = rotationDraft ?? (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
+        const { x: rhx, y: rhy } = getRotationHandlePosition(el, rotationDraft ?? undefined);
+        const cx = el.x + el.width / 2;
+        const cy = el.y + el.height / 2;
+        const screenCenter = worldToScreen(cx, cy);
+        const screenHandle = worldToScreen(rhx, rhy);
+        const handleRadius = 18;
+        return (
+          <div className="absolute inset-0 pointer-events-none z-30" aria-hidden>
+            <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: "visible" }}>
+              <line
+                x1={screenCenter.x}
+                y1={screenCenter.y}
+                x2={screenHandle.x}
+                y2={screenHandle.y}
+                stroke={isDark ? "#60a5fa" : "#3b82f6"}
+                strokeWidth={1.5}
+                strokeLinecap="round"
+              />
+            </svg>
+            <div
+              className="absolute rounded-full border-2 bg-white dark:bg-slate-800 border-blue-500 dark:border-blue-400 cursor-grab active:cursor-grabbing shadow-md pointer-events-auto"
+              style={{
+                left: screenHandle.x - handleRadius,
+                top: screenHandle.y - handleRadius,
+                width: handleRadius * 2,
+                height: handleRadius * 2,
+              }}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const rect = canvasRef.current?.getBoundingClientRect();
+                if (!rect) return;
+                const sx = e.clientX - rect.left;
+                const sy = e.clientY - rect.top;
+                const world = screenToWorld(sx, sy);
+                const startAngle = Math.atan2(world.y - cy, world.x - cx);
+                const startRotation = (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
+                setRotating({ id: el.id, startAngle, startRotation });
+                setRotationDraft(startRotation);
+              }}
+              title="Drag to rotate"
+            />
+          </div>
+        );
+      })()}
 
       {/* Duplicate + Edit (format panel) + Delete + Layer buttons — above selected element */}
       {selectedId && !editingId && selectedElement && selectedElement.type !== "connector" && (() => {
