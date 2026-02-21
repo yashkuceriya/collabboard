@@ -1454,7 +1454,10 @@ export function Canvas({
           y: sy - (sy - base.y) * ratio,
         };
       } else {
-        next = { ...base, x: base.x - e.deltaX, y: base.y - e.deltaY };
+        // Shift+scroll → horizontal pan (mice only emit deltaY; trackpads emit both)
+        const dx = e.shiftKey && e.deltaX === 0 ? e.deltaY : e.deltaX;
+        const dy = e.shiftKey && e.deltaX === 0 ? 0 : e.deltaY;
+        next = { ...base, x: base.x - dx, y: base.y - dy };
       }
       pendingViewportRef.current = next;
       if (wheelRafRef.current === null) {

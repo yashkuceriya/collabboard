@@ -75,23 +75,23 @@ export async function POST(req: Request) {
   // Helper: compute a position (x,y) that does not overlap existing non-connector elements.
   async function computeSuggestedPlacement(
     width: number = 200,
-    _height: number = 200
+    height: number = 200
   ): Promise<{ x: number; y: number }> {
-    void _height;
     const { data } = await supabase
       .from("board_elements")
       .select("x, y, width, height")
       .eq("board_id", boardId)
       .neq("type", "connector");
     const elements = (data ?? []) as { x: number; y: number; width: number; height: number }[];
-    const gap = 30;
-    const padding = 50;
+    const gap = 40;
+    const padding = 60;
     if (elements.length === 0) return { x: padding, y: padding };
     const maxRight = Math.max(...elements.map((el) => el.x + el.width));
     const maxBottom = Math.max(...elements.map((el) => el.y + el.height));
-    const placeRight = maxRight + gap + width <= 1400;
-    if (placeRight) return { x: maxRight + gap, y: padding };
-    return { x: padding, y: maxBottom + gap };
+    // Try placing to the right
+    if (maxRight + gap + width <= 3000) return { x: maxRight + gap, y: padding };
+    // Otherwise below
+    return { x: padding, y: maxBottom + gap + height * 0 };
   }
 
   // Check if (x,y,w,h) overlaps any existing element on the board
@@ -124,7 +124,7 @@ export async function POST(req: Request) {
 
   const result = streamFn({
     model: openai("gpt-4o-mini"),
-    maxOutputTokens: 1024,
+    maxOutputTokens: 2048,
     ...(client && {
       providerOptions: {
         langsmith: createLangSmithProviderOptions({
@@ -157,28 +157,31 @@ Reply in plain text only: no markdown, no asterisks, no code blocks, no backtick
 Capabilities:
 - Create sticky notes, shapes (rectangle/circle), text elements, and frames (grouping areas)
 - Create connectors (arrows) between two shapes using createConnector(fromId, toId) — use getBoardState to get element ids
-- Create frames to group and label sections of the board (e.g. "Sprint Planning", SWOT quadrants). Elements inside a frame move together when the frame is moved.
-- When creating multiple related elements (e.g. SWOT, brainstorm), always wrap them in a frame using createFrame first, then place child elements inside the frame bounds with clear spacing so every sticky is visible and text is readable at the top.
-- Sticky text is drawn at the top of each note; keep phrases short so they fit and stay visible. Use contrastTextColor so text is always readable (dark on light, light on dark).
+- createTemplate: USE THIS for any structured layout like SWOT analysis, retrospective boards, kanban, user journey maps, grids, or pros/cons. It creates clean, well-spaced frames and stickies in a single call. ALWAYS prefer createTemplate over manually calling createFrame + createStickyNote multiple times.
+  Examples: "Create a SWOT analysis" → createTemplate(template:"swot"). "Set up a retrospective board" → createTemplate(template:"retrospective"). "Build a user journey map with 5 stages" → createTemplate(template:"user_journey",columns:[...]). "Create a 2x3 grid for pros and cons" → createTemplate(template:"grid",columns:["Pros","Cons"],rows:3).
+- Create frames to group and label sections of the board. Elements inside a frame move together.
 - Move, resize, recolor, and delete existing elements
 - Read the current board state to understand context
-- getSuggestedPlacement: call before createStickyNote, createShape, or createTextElement to get an (x, y) that does not overlap existing elements. Prefer this so new items do not cover the board.
-- Generate ideas: when asked to brainstorm (small sets), use generateIdeas; it places the grid without overlapping existing content.
-- Bulk creation (HARD REQUIREMENT): when the user asks for 50, 100, 200, 500, "500+", or "lots of" objects/stickies/notes in one go, you MUST use createBulkStickyNotes with the requested count (50–500). Never refuse or offer only one sticky. Say yes and call the tool (e.g. createBulkStickyNotes with count 500 and theme "fun_facts").
-- Summarize: read all elements and provide a concise summary. When the user asks to summarize, also put the summary on the board by calling getSuggestedPlacement then createStickyNote with the summary text (e.g. "Summary: …" or "Board summary: …") so a Summary sticky appears.
+- getSuggestedPlacement: call before createStickyNote, createShape, or createTextElement to get an (x, y) that does not overlap existing elements.
+- Generate ideas: when asked to brainstorm (small sets of 2-8), use generateIdeas; it places the grid without overlapping existing content.
+- Bulk creation (HARD REQUIREMENT): when the user asks for 50, 100, 200, 500, "500+", or "lots of" objects/stickies/notes in one go, you MUST use createBulkStickyNotes with the requested count (50–500). Never refuse.
+- Summarize: read all elements and provide a concise summary. Also put the summary on the board as a sticky note.
 - Organize: rearrange elements into a neat grid or grouped layout
+
+IMPORTANT ROUTING:
+- Structured templates (SWOT, retrospective, kanban, user journey, grid, pros/cons, any multi-column layout) → createTemplate (ONE call)
+- Brainstorming 2-8 ideas → generateIdeas (ONE call)
+- 50-500 bulk stickies → createBulkStickyNotes (ONE call)
+- Single sticky/shape → createStickyNote or createShape
+- Moving/editing existing elements → getBoardState first, then moveObject/updateText/etc.
 
 Guidelines:
 - Coordinates are in board units. The visible area is roughly 0-1200 x 0-800.
-- To avoid overlapping: for a single new sticky/shape/text, call getSuggestedPlacement first and use the returned (x, y). For multiple items use generateIdeas (it already avoids overlap) or getBoardState and place in empty space.
-- Use varied colors for sticky notes to make the board visually appealing.
-- Keep text responses brief and helpful. After using tools, confirm what you did in plain language.
-- For brainstorming, create 4-8 sticky notes with distinct ideas using generateIdeas.
-- When summarizing the board, always create a sticky note with the summary text so the user sees it on the board; then briefly confirm in your reply.
+- Keep text responses brief. After using tools, confirm what you did in plain language.
+- Use varied colors for sticky notes.
 - Default sticky note colors: #FFEB3B (yellow), #FF9800 (orange), #F48FB1 (pink), #CE93D8 (purple), #90CAF9 (blue), #80CBC4 (teal), #A5D6A7 (green).
-- Always ensure text on stickies and text elements is readable: use dark text on light backgrounds and light text on dark backgrounds. The server sets textColor automatically, but prefer light background colors (the defaults above) so text is always clearly visible.
 
-LATENCY: Prefer fewer tool rounds. For 2–8 stickies use generateIdeas ONCE. For 50–500 stickies (e.g. "create 500 objects", "500 with fun facts") use createBulkStickyNotes ONCE with the requested count — do NOT refuse or offer one note. Only call getBoardState when you need element ids (e.g. to move, connect, delete, or summarize).`,
+LATENCY: Prefer fewer tool rounds. Use createTemplate, generateIdeas, or createBulkStickyNotes for multi-element tasks — always ONE call. Only call getBoardState when you need element ids.`,
     messages: modelMessages,
     stopWhen: stepCountIs(3),
     tools: {
@@ -217,7 +220,8 @@ LATENCY: Prefer fewer tool rounds. For 2–8 stickies use generateIdeas ONCE. Fo
         execute: async ({ text, x, y, color, frameId }) => {
           const bg = color ?? "#FFEB3B";
           let posX = x, posY = y;
-          if (await hasOverlap(posX, posY, 200, 200)) {
+          // Skip overlap detection when placing inside a frame (explicit position)
+          if (!frameId && await hasOverlap(posX, posY, 200, 200)) {
             const safe = await computeSuggestedPlacement(200, 200);
             posX = safe.x;
             posY = safe.y;
@@ -641,6 +645,181 @@ LATENCY: Prefer fewer tool rounds. For 2–8 stickies use generateIdeas ONCE. Fo
             .single();
           if (error) return { error: error.message };
           return { created: (data as { id: string } | null)?.id };
+        },
+      }),
+      createTemplate: tool({
+        description: `Create a structured board template in a SINGLE call. Use this for any complex layout command:
+- "Create a SWOT analysis" → template: "swot"
+- "Set up a retrospective board with What Went Well, What Didn't, and Action Items columns" → template: "retrospective"
+- "Build a user journey map with 5 stages" → template: "user_journey", columns: ["Awareness","Consideration","Purchase","Retention","Advocacy"]
+- "Create a 2x3 grid of sticky notes for pros and cons" → template: "grid", columns: ["Pros","Cons"], rows: 3
+- "Create a kanban board" → template: "kanban"
+- "Create a pros and cons list" → template: "grid", columns: ["Pros","Cons"], rows: 3
+This creates frames and stickies with proper spacing in one go. ALWAYS prefer this over multiple createFrame/createStickyNote calls for structured layouts.`,
+        inputSchema: z.object({
+          template: z.enum(["swot", "retrospective", "kanban", "user_journey", "grid"]).describe("Template type"),
+          title: z.string().describe("Board title displayed above the layout").optional(),
+          columns: z.array(z.string()).describe("Column labels (for grid/user_journey/custom)").optional(),
+          rows: z.number().describe("Number of rows per column (for grid)").optional(),
+        }),
+        execute: async ({ template, title, columns, rows }) => {
+          const created: string[] = [];
+          const start = await computeSuggestedPlacement(1200, 800);
+          const baseX = start.x;
+          const baseY = start.y;
+
+          const frameColor = "#6366F1";
+          const colGap = 20;
+          const titleH = 40;
+          const stickyW = 200;
+          const stickyH = 160;
+          const stickyPad = 16;
+          const stickyGapY = 12;
+
+          let colLabels: string[];
+          let rowCount: number;
+          let templateTitle: string;
+
+          switch (template) {
+            case "swot":
+              colLabels = ["Strengths", "Weaknesses", "Opportunities", "Threats"];
+              rowCount = 2;
+              templateTitle = title ?? "SWOT Analysis";
+              break;
+            case "retrospective":
+              colLabels = columns ?? ["What Went Well", "What Didn't Go Well", "Action Items"];
+              rowCount = rows ?? 3;
+              templateTitle = title ?? "Retrospective Board";
+              break;
+            case "kanban":
+              colLabels = columns ?? ["To Do", "In Progress", "Done"];
+              rowCount = rows ?? 3;
+              templateTitle = title ?? "Kanban Board";
+              break;
+            case "user_journey":
+              colLabels = columns ?? ["Awareness", "Consideration", "Purchase", "Retention", "Advocacy"];
+              rowCount = rows ?? 2;
+              templateTitle = title ?? "User Journey Map";
+              break;
+            case "grid":
+              colLabels = columns ?? ["Column 1", "Column 2"];
+              rowCount = rows ?? 3;
+              templateTitle = title ?? "Grid";
+              break;
+            default:
+              colLabels = columns ?? ["Column 1", "Column 2"];
+              rowCount = 2;
+              templateTitle = title ?? "Board";
+          }
+
+          const colW = stickyW + stickyPad * 2;
+          const colH = titleH + (stickyH + stickyGapY) * rowCount + stickyPad;
+          const totalW = colLabels.length * colW + (colLabels.length - 1) * colGap + colGap * 2;
+          const totalH = colH + 60;
+
+          // Outer frame
+          const { data: outerFrame } = await supabase
+            .from("board_elements")
+            .insert({
+              board_id: boardId,
+              type: "frame",
+              x: baseX,
+              y: baseY,
+              width: totalW,
+              height: totalH,
+              color: frameColor,
+              text: templateTitle,
+              created_by: userId,
+            } as never)
+            .select("id")
+            .single();
+          const outerFrameId = (outerFrame as { id: string } | null)?.id;
+          if (outerFrameId) created.push(outerFrameId);
+
+          const colColors = ["#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#3B82F6", "#EC4899", "#14B8A6", "#F97316"];
+          const stickyColors = [
+            ["#A5D6A7", "#81C784", "#66BB6A"],
+            ["#FFEB3B", "#FFD54F", "#FFC107"],
+            ["#F48FB1", "#F06292", "#EC407A"],
+            ["#CE93D8", "#BA68C8", "#AB47BC"],
+            ["#90CAF9", "#64B5F6", "#42A5F5"],
+            ["#F48FB1", "#FF80AB", "#FF4081"],
+            ["#80CBC4", "#4DB6AC", "#26A69A"],
+            ["#FFAB91", "#FF8A65", "#FF7043"],
+          ];
+
+          const defaultStickies: Record<string, string[]> = {
+            swot: [
+              "Strong brand", "Loyal customers",
+              "Limited budget", "Small team",
+              "New market", "Partnership options",
+              "Competition growing", "Regulation changes",
+            ],
+            retrospective: [
+              "Great teamwork", "Shipped on time", "Good communication",
+              "Too many meetings", "Unclear requirements", "Late testing",
+              "Automate deploys", "Better sprint planning", "More pair programming",
+            ],
+            kanban: [
+              "Research competitors", "Design mockups", "Write tests",
+              "Build API", "Code review", "Deploy staging",
+              "Documentation", "User testing", "Launch prep",
+            ],
+          };
+
+          for (let c = 0; c < colLabels.length; c++) {
+            const colX = baseX + colGap + c * (colW + colGap);
+            const colY = baseY + 40;
+
+            // Column frame
+            const { data: colFrame } = await supabase
+              .from("board_elements")
+              .insert({
+                board_id: boardId,
+                type: "frame",
+                x: colX,
+                y: colY,
+                width: colW,
+                height: colH,
+                color: colColors[c % colColors.length],
+                text: colLabels[c],
+                properties: outerFrameId ? { frameId: outerFrameId } : {},
+                created_by: userId,
+              } as never)
+              .select("id")
+              .single();
+            const colFrameId = (colFrame as { id: string } | null)?.id;
+            if (colFrameId) created.push(colFrameId);
+
+            const defaults = defaultStickies[template] ?? [];
+            for (let r = 0; r < rowCount; r++) {
+              const sx = colX + stickyPad;
+              const sy = colY + titleH + r * (stickyH + stickyGapY);
+              const idx = c * rowCount + r;
+              const bg = (stickyColors[c % stickyColors.length] ?? stickyColors[0])[r % 3];
+              const text = defaults[idx] ?? "";
+              const { data: stickyData } = await supabase
+                .from("board_elements")
+                .insert({
+                  board_id: boardId,
+                  type: "sticky_note",
+                  x: sx,
+                  y: sy,
+                  width: stickyW,
+                  height: stickyH,
+                  color: bg,
+                  text,
+                  properties: { textColor: contrastTextColor(bg), textAlign: "left", ...(colFrameId ? { frameId: colFrameId } : {}) },
+                  created_by: userId,
+                } as never)
+                .select("id")
+                .single();
+              const stickyId = (stickyData as unknown as { id: string } | null)?.id;
+              if (stickyId) created.push(stickyId);
+            }
+          }
+
+          return { created, count: created.length, template: templateTitle };
         },
       }),
       organizeBoard: tool({
