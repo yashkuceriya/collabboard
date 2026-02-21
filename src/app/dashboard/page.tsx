@@ -23,6 +23,7 @@ export default function DashboardPage() {
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
+  const [leavingBoardId, setLeavingBoardId] = useState<string | null>(null);
   const [shareBoard, setShareBoard] = useState<{ id: string; name: string } | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("all");
   const [search, setSearch] = useState("");
@@ -75,7 +76,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (pathname === "/dashboard" && user?.id) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- load data on mount/navigation
       fetchMyBoards(user.id);
     }
   }, [pathname, user?.id]);
@@ -142,6 +142,23 @@ export default function DashboardPage() {
         })
     );
     await supabase.from("boards").update({ is_starred: newVal } as never).eq("id", id);
+  }
+
+  async function leaveBoard(id: string) {
+    setLeavingBoardId(id);
+    try {
+      const res = await fetch(`/api/boards/${id}/leave`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Failed to leave board.");
+        return;
+      }
+      setBoards((prev) => prev.filter((b) => b.id !== id));
+      removeRecentBoard(id);
+      setRecentKey((k) => k + 1);
+    } finally {
+      setLeavingBoardId(null);
+    }
   }
 
   async function handleSignOut() {
@@ -477,6 +494,25 @@ export default function DashboardPage() {
                             >
                               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400 hover:text-red-500">
                                 <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M12.67 4v9.33a1.33 1.33 0 01-1.34 1.34H4.67a1.33 1.33 0 01-1.34-1.34V4" />
+                              </svg>
+                            </button>
+                          )}
+                          {board.access === "shared" && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (leavingBoardId === board.id) return;
+                                if (confirm("Remove this board from your list? You can rejoin later with the same link.")) {
+                                  leaveBoard(board.id);
+                                }
+                              }}
+                              disabled={leavingBoardId === board.id}
+                              className="p-1.5 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-all focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-1 disabled:opacity-50"
+                              title="Leave board (remove from my list)"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400 hover:text-amber-500">
+                                <path d="M6 2H4a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V3a1 1 0 00-1-1h-2M6 2v2a1 1 0 001 1h2a1 1 0 001-1V2M6 2h4" />
                               </svg>
                             </button>
                           )}
