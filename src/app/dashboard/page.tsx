@@ -147,7 +147,11 @@ export default function DashboardPage() {
   async function leaveBoard(id: string) {
     setLeavingBoardId(id);
     try {
-      const res = await fetch(`/api/boards/${id}/leave`, { method: "DELETE" });
+      const res = await fetch(`/api/boards/${id}/leave`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken }),
+      });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         alert(data.error || "Failed to leave board.");
