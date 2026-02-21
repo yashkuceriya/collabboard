@@ -322,6 +322,10 @@ export function Canvas({
   const panStartRef = useRef({ x: 0, y: 0 });
   const viewportRef = useRef(viewport);
   useEffect(() => { viewportRef.current = viewport; });
+  // Sync pending viewport when parent updates (e.g. zoom 100% / +/- buttons) so canvas applies immediately
+  useEffect(() => {
+    pendingViewportRef.current = viewport;
+  }, [viewport]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [marquee, setMarquee] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
@@ -779,15 +783,18 @@ export function Canvas({
         ctx.stroke();
       }
 
-      // Selection outline — single thin border (Miro/Figma-style, constant screen-space thickness)
+      // Selection outline — single thin border (Miro/Figma-style). For text, cap size to avoid huge box when selected.
       if (el.id === selectedId || selectedIds.has(el.id) || isFrameChild) {
         const gap = 3 / effectiveViewport.zoom;
         const cornerR = 4 / effectiveViewport.zoom;
+        const maxOutline = 1200; // cap so text selection outline is never absurdly large
+        const ow = el.type === "text" ? Math.min(width, maxOutline) : width;
+        const oh = el.type === "text" ? Math.min(height, maxOutline) : height;
         ctx.strokeStyle = isFrameChild ? "#818cf8" : (isDark ? "#60a5fa" : "#3b82f6");
         ctx.lineWidth = 1.5 / effectiveViewport.zoom;
         ctx.setLineDash(isFrameChild || (selectedIds.has(el.id) && el.id !== selectedId) ? [4 / effectiveViewport.zoom, 3 / effectiveViewport.zoom] : []);
         ctx.beginPath();
-        ctx.roundRect(x - gap, y - gap, width + gap * 2, height + gap * 2, cornerR);
+        ctx.roundRect(x - gap, y - gap, ow + gap * 2, oh + gap * 2, cornerR);
         ctx.stroke();
         ctx.setLineDash([]);
       }
@@ -911,10 +918,18 @@ export function Canvas({
       ctx.restore();
     }
 
-    // Edge anchor dots on hovered shapes in connector mode (midpoints of each side)
-    if (tool === "connector" && !connectorFromId) {
-      const hovEl = elements.find((e) => e.id === hoveredId && e.type !== "connector" && e.type !== "freehand");
-      if (hovEl) {
+    // Edge anchor dots: when connector started from one object, show connection points on all other connectable elements
+    const connectableTypes = new Set(["sticky_note", "rectangle", "circle", "text", "frame"]);
+    if (tool === "connector") {
+      const targetsToShow =
+        connectorFromId
+          ? elements.filter(
+              (e) => e.id !== connectorFromId && e.type !== "connector" && e.type !== "freehand" && connectableTypes.has(e.type)
+            )
+          : hoveredId
+            ? elements.filter((e) => e.id === hoveredId && e.type !== "connector" && e.type !== "freehand")
+            : [];
+      for (const hovEl of targetsToShow) {
         const anchors = [
           { x: hovEl.x + hovEl.width / 2, y: hovEl.y },
           { x: hovEl.x + hovEl.width, y: hovEl.y + hovEl.height / 2 },
@@ -1772,14 +1787,14 @@ export function Canvas({
         </div>
       )}
 
-      {/* Duplicate + Edit (format panel) + Delete + Layer buttons — tethered to selected element */}
+      {/* Duplicate + Edit (format panel) + Delete + Layer buttons — above selected element */}
       {selectedId && !editingId && selectedElement && selectedElement.type !== "connector" && (() => {
         const el = selectedElement;
-        const anchor = worldToScreen(el.x + el.width + 8, el.y - 4);
+        const anchor = worldToScreen(el.x + el.width / 2, el.y - 8);
         return (
           <div
-            className="absolute z-20 flex items-center gap-2 flex-wrap"
-            style={{ left: anchor.x, top: anchor.y, transform: "translate(0, -50%)" }}
+            className="absolute z-20 flex items-center gap-2 flex-wrap justify-center"
+            style={{ left: anchor.x, top: anchor.y, transform: "translate(-50%, -100%)" }}
           >
             <button
               type="button"
@@ -1831,30 +1846,28 @@ export function Canvas({
               </>
             )}
             {canDeleteSelected && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onDelete(selectedId!);
-                    setSelectedId(null);
-                  }}
-                  className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 hover:bg-red-200 dark:text-red-200 dark:bg-red-900/40 dark:hover:bg-red-900/60 rounded-lg shadow-md border border-red-200 dark:border-red-800 whitespace-nowrap"
-                >
-                  Delete
-                </button>
-                <span className="text-xs text-gray-500 dark:text-gray-400 hidden sm:inline">or Del</span>
-              </>
+              <button
+                type="button"
+                onClick={() => {
+                  onDelete(selectedId!);
+                  setSelectedId(null);
+                }}
+                className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 hover:bg-red-200 dark:text-red-200 dark:bg-red-900/40 dark:hover:bg-red-900/60 rounded-lg shadow-md border border-red-200 dark:border-red-800 whitespace-nowrap"
+                title="Delete (Del)"
+              >
+                Delete
+              </button>
             )}
           </div>
         );
       })()}
       {selectedId && !editingId && !canDeleteSelected && selectedElement && selectedElement.type !== "connector" && (() => {
         const el = selectedElement;
-        const anchor = worldToScreen(el.x + el.width + 8, el.y - 4);
+        const anchor = worldToScreen(el.x + el.width / 2, el.y - 8);
         return (
           <div
             className="absolute z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm px-3 py-1.5 rounded-lg shadow border border-gray-200 dark:border-gray-700"
-            style={{ left: anchor.x, top: anchor.y, transform: "translate(0, -50%)" }}
+            style={{ left: anchor.x, top: anchor.y, transform: "translate(-50%, -100%)" }}
           >
             <span className="text-xs text-gray-500 dark:text-gray-400">Only the creator can delete this</span>
           </div>
