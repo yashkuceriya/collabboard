@@ -148,6 +148,52 @@ export interface Database {
           created_at?: string;
         };
       };
+      board_ai_messages: {
+        Row: {
+          id: string;
+          board_id: string;
+          role: "user" | "assistant";
+          content: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          board_id: string;
+          role: "user" | "assistant";
+          content: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          board_id?: string;
+          role?: "user" | "assistant";
+          content?: string;
+          created_at?: string;
+        };
+      };
+      board_version_snapshots: {
+        Row: {
+          id: string;
+          board_id: string;
+          created_at: string;
+          user_id: string | null;
+          snapshot: unknown;
+        };
+        Insert: {
+          id?: string;
+          board_id: string;
+          created_at?: string;
+          user_id?: string | null;
+          snapshot: unknown;
+        };
+        Update: {
+          id?: string;
+          board_id?: string;
+          created_at?: string;
+          user_id?: string | null;
+          snapshot?: unknown;
+        };
+      };
     };
     Functions: {
       get_user_id_by_email: {

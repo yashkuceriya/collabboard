@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import type { BoardElement } from "@/lib/types/database";
@@ -11,8 +11,10 @@ import { PresenceBar } from "@/components/presence-bar";
 import { ChatPanel } from "@/components/chat-panel";
 import { BoardChatPanel } from "@/components/board-chat-panel";
 import { ThemeSwitcher } from "@/components/theme-switcher";
+import { UserMenu } from "@/components/user-menu";
 import { ShareBoardModal } from "@/components/share-board-modal";
 import { InterviewToolbar } from "@/components/interview-toolbar";
+import { VersionHistoryPanel } from "@/components/version-history-panel";
 import { useRealtimeElements } from "@/hooks/use-realtime-elements";
 import { usePresence } from "@/hooks/use-presence";
 import { useBoardChat } from "@/hooks/use-board-chat";
@@ -37,9 +39,69 @@ export default function BoardPage() {
   const [nameInput, setNameInput] = useState("");
   const [showShareModal, setShowShareModal] = useState(false);
   const [showBoardChatPanel, setShowBoardChatPanel] = useState(false);
+  const [showVersionHistoryPanel, setShowVersionHistoryPanel] = useState(false);
   const [interviewMode, setInterviewMode] = useState(false); // derived from board.is_interview
+  const [selectionIds, setSelectionIds] = useState<string[]>([]);
+  const [boardFps, setBoardFps] = useState(0);
+  const [initialAiPrompt, setInitialAiPrompt] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const perfMode = searchParams.get("perf") === "1";
+  const versionSnapshotTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const TEMPLATE_PROMPTS: Record<string, string> = {
+    kanban: "Create a kanban board with To Do, In Progress, and Done columns.",
+    swot: "Create a SWOT analysis with four quadrants: Strengths, Weaknesses, Opportunities, Threats.",
+    retrospective: "Set up a retrospective board with What went well, What to improve, and Action items.",
+    user_journey: "Build a user journey map showing the user experience flow.",
+    pros_cons: "Create a pros and cons grid to weigh options side by side.",
+  };
+
+  const scheduleVersionSnapshot = useCallback(() => {
+    if (versionSnapshotTimeoutRef.current) clearTimeout(versionSnapshotTimeoutRef.current);
+    versionSnapshotTimeoutRef.current = setTimeout(() => {
+      versionSnapshotTimeoutRef.current = null;
+      if (!accessToken) return;
+      fetch(`/api/boards/${boardId}/snapshot`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }).catch(() => {});
+    }, 4000);
+  }, [boardId, accessToken]);
+
+  /** Zoom viewport to fit the given element IDs (or all content if ids empty). Use after AI creates elements or to focus selection. */
+  const zoomToElementIds = useCallback((ids: string[]) => {
+    const els = ids.length > 0
+      ? elements.filter((e) => ids.includes(e.id) && e.type !== "connector")
+      : elements.filter((e) => e.type !== "connector");
+    if (els.length === 0) {
+      setViewport({ x: 0, y: 0, zoom: 1 });
+      return;
+    }
+    const minX = Math.min(...els.map((e) => e.x));
+    const minY = Math.min(...els.map((e) => e.y));
+    const maxX = Math.max(...els.map((e) => e.x + e.width));
+    const maxY = Math.max(...els.map((e) => e.y + e.height));
+    const bw = maxX - minX || 100;
+    const bh = maxY - minY || 100;
+    const containerW = typeof window !== "undefined" ? window.innerWidth - 80 : 800;
+    const containerH = typeof window !== "undefined" ? window.innerHeight - 120 : 600;
+    const zoom = Math.min(containerW / bw, containerH / bh, 2) * 0.9;
+    const cx = minX + bw / 2;
+    const cy = minY + bh / 2;
+    setViewport({ x: containerW / 2 - cx * zoom, y: containerH / 2 - cy * zoom + 50, zoom });
+  }, [elements]);
+
+  // When opened from dashboard template, open AI panel and send template prompt once; then clear URL param
+  const templateParam = searchParams.get("template");
+  useEffect(() => {
+    if (!templateParam || !user) return;
+    const prompt = TEMPLATE_PROMPTS[templateParam] || `Create a ${templateParam.replace(/_/g, " ")} board.`;
+    setInitialAiPrompt(prompt);
+    setShowChatPanel(true);
+    const u = new URL(window.location.href);
+    u.searchParams.delete("template");
+    router.replace(u.pathname + u.search, { scroll: false });
+  }, [templateParam, user, router]);
 
   // Load user, session, and initial elements (merge with any realtime updates that arrived first)
   useEffect(() => {
@@ -208,13 +270,14 @@ export default function BoardPage() {
       if (row) {
         setElements((prev) => sortElementsByOrder(prev.map((e) => (e.id === tempId ? row : e))));
         broadcastElement(row);
+        scheduleVersionSnapshot();
         return row.id;
       }
 
       setElements((prev) => prev.filter((e) => e.id !== tempId));
       return null;
     },
-    [boardId, user, broadcastElement]
+    [boardId, user, broadcastElement, scheduleVersionSnapshot]
   );
 
   // Create connector (arrow) between two elements. Arrows move with shapes automatically.
@@ -262,12 +325,13 @@ export default function BoardPage() {
       if (row) {
         setElements((prev) => sortElementsByOrder(prev.map((e) => (e.id === tempId ? row : e))));
         broadcastElement(row);
+        scheduleVersionSnapshot();
         return row.id;
       }
       setElements((prev) => prev.filter((e) => e.id !== tempId));
       return null;
     },
-    [boardId, user, broadcastElement]
+    [boardId, user, broadcastElement, scheduleVersionSnapshot]
   );
 
   // Create freehand stroke (pen tool) — points in world coordinates
@@ -324,12 +388,13 @@ export default function BoardPage() {
       if (row) {
         setElements((prev) => sortElementsByOrder(prev.map((e) => (e.id === tempId ? row : e))));
         broadcastElement(row);
+        scheduleVersionSnapshot();
         return row.id;
       }
       setElements((prev) => prev.filter((e) => e.id !== tempId));
       return null;
     },
-    [boardId, user, broadcastElement]
+    [boardId, user, broadcastElement, scheduleVersionSnapshot]
   );
 
   // Update element (persists to Supabase + broadcasts to peers)
@@ -343,8 +408,9 @@ export default function BoardPage() {
         .from("board_elements")
         .update(updates as never)
         .eq("id", id);
+      scheduleVersionSnapshot();
     },
-    [broadcastElementUpdated]
+    [broadcastElementUpdated, scheduleVersionSnapshot]
   );
 
   // Insert large code block (for coding interview)
@@ -394,9 +460,10 @@ export default function BoardPage() {
       const row = data as BoardElement;
       setElements((prev) => sortElementsByOrder([...prev, row]));
       broadcastElement(row);
+      scheduleVersionSnapshot();
       return row.id;
     },
-    [boardId, user, elements, broadcastElement]
+    [boardId, user, elements, broadcastElement, scheduleVersionSnapshot]
   );
 
   // Bring element to front (increase z_index in properties)
@@ -413,8 +480,9 @@ export default function BoardPage() {
         supabase.from("board_elements").update({ properties: newProps } as never).eq("id", id);
         return sortElementsByOrder(prev.map((e) => (e.id === id ? { ...e, properties: newProps } : e)));
       });
+      scheduleVersionSnapshot();
     },
-    [broadcastElementUpdated]
+    [broadcastElementUpdated, scheduleVersionSnapshot]
   );
 
   // Send element to back (decrease z_index in properties)
@@ -431,8 +499,9 @@ export default function BoardPage() {
         supabase.from("board_elements").update({ properties: newProps } as never).eq("id", id);
         return sortElementsByOrder(prev.map((e) => (e.id === id ? { ...e, properties: newProps } : e)));
       });
+      scheduleVersionSnapshot();
     },
-    [broadcastElementUpdated]
+    [broadcastElementUpdated, scheduleVersionSnapshot]
   );
 
   // Optimistic local-only update (no DB round-trip) — used during drag
@@ -462,8 +531,9 @@ export default function BoardPage() {
       broadcastElementDeleted(id);
       setElements((prev) => prev.filter((e) => e.id !== id));
       await supabase.from("board_elements").delete().eq("id", id);
+      scheduleVersionSnapshot();
     },
-    [broadcastElementDeleted, elements]
+    [broadcastElementDeleted, elements, scheduleVersionSnapshot]
   );
 
   const insertTemplate = useCallback(
@@ -513,7 +583,8 @@ export default function BoardPage() {
     for (const el of elements) broadcastElementDeleted(el.id);
     setElements([]);
     await supabase.from("board_elements").delete().eq("board_id", boardId);
-  }, [elements, broadcastElementDeleted, boardId]);
+    scheduleVersionSnapshot();
+  }, [elements, broadcastElementDeleted, boardId, scheduleVersionSnapshot]);
 
   const clearBoardWithConfirm = useCallback(() => {
     if (elements.length === 0) return;
@@ -622,6 +693,8 @@ export default function BoardPage() {
           onClose={() => setShowChatPanel(false)}
           interviewMode={interviewMode}
           onAiFinished={refreshElements}
+          initialPrompt={initialAiPrompt}
+          onClearInitialPrompt={() => setInitialAiPrompt(null)}
         />
       )}
 
@@ -715,9 +788,38 @@ export default function BoardPage() {
             Chat
           </button>
           <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
+          <button
+            type="button"
+            onClick={() => setShowVersionHistoryPanel((v) => !v)}
+            title="Version history"
+            className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-1 ${showVersionHistoryPanel ? "bg-amber-500 text-white" : "text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-800/50"}`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 6v6l4 2" />
+            </svg>
+            History
+          </button>
+          <span className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]" aria-hidden />
+            Online
+          </span>
           <PresenceBar peers={peers} user={user} />
+          <UserMenu user={user} onSignOut={async () => { await supabase.auth.signOut(); router.push("/auth"); }} />
         </div>
       </div>
+
+      {/* Version History panel */}
+      {showVersionHistoryPanel && (
+        <div className="absolute top-0 bottom-0 z-30" style={{ right: showChatPanel ? 340 : showBoardChatPanel ? 320 : 0 }}>
+          <VersionHistoryPanel
+            boardId={boardId}
+            accessToken={accessToken}
+            onClose={() => setShowVersionHistoryPanel(false)}
+            onRestore={refreshElements}
+          />
+        </div>
+      )}
 
       {/* Board chat panel — to the left of AI panel when both open */}
       {showBoardChatPanel && (
@@ -748,6 +850,13 @@ export default function BoardPage() {
       {/* Bottom toolbar — hidden in interview mode (interview toolbar replaces it) */}
       {!interviewMode && <Toolbar tool={tool} onToolChange={setTool} />}
 
+      {/* FPS badge (normal UI; when ?perf=1 full perf panel is shown instead) */}
+      {!perfMode && (
+        <div className="absolute bottom-6 left-6 z-20 px-2.5 py-1.5 rounded-lg bg-white/95 dark:bg-gray-900/95 backdrop-blur-md shadow border border-gray-200/50 dark:border-gray-700/50 text-[11px] font-mono font-bold text-gray-600 dark:text-gray-300 tabular-nums">
+          {boardFps} FPS
+        </div>
+      )}
+
       {/* Zoom controls */}
       <div className="absolute bottom-6 right-6 z-20 flex items-center gap-1 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-xl shadow-lg border border-gray-200/50 dark:border-gray-700/50 px-1.5 py-1">
         <button
@@ -777,21 +886,15 @@ export default function BoardPage() {
         <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
         <button
           type="button"
-          onClick={() => {
-            if (elements.length === 0) { setViewport({ x: 0, y: 0, zoom: 1 }); return; }
-            const minX = Math.min(...elements.filter(e => e.type !== "connector").map(e => e.x));
-            const minY = Math.min(...elements.filter(e => e.type !== "connector").map(e => e.y));
-            const maxX = Math.max(...elements.filter(e => e.type !== "connector").map(e => e.x + e.width));
-            const maxY = Math.max(...elements.filter(e => e.type !== "connector").map(e => e.y + e.height));
-            const bw = maxX - minX || 100;
-            const bh = maxY - minY || 100;
-            const containerW = window.innerWidth - 80;
-            const containerH = window.innerHeight - 120;
-            const zoom = Math.min(containerW / bw, containerH / bh, 2) * 0.9;
-            const cx = minX + bw / 2;
-            const cy = minY + bh / 2;
-            setViewport({ x: containerW / 2 - cx * zoom, y: containerH / 2 - cy * zoom + 50, zoom });
-          }}
+          onClick={() => zoomToElementIds(selectionIds)}
+          className="p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          title={selectionIds.length > 0 ? "Focus on selection" : "Fit all to screen"}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="4" /><path d="M8 2v2M8 12v2M2 8h2M12 8h2" /></svg>
+        </button>
+        <button
+          type="button"
+          onClick={() => zoomToElementIds([])}
           className="p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
           title="Fit to screen"
         >
@@ -830,6 +933,11 @@ export default function BoardPage() {
         syncLatencyRef={syncLatencyRef}
         onStressTest={perfMode ? stressTest : undefined}
         onClearBoard={perfMode ? clearBoardWithConfirm : undefined}
+        onSelectionChange={(selectedId, selectedIds) => {
+          const ids = selectedId ? [selectedId, ...selectedIds].filter((id, i, arr) => arr.indexOf(id) === i) : [...selectedIds];
+          setSelectionIds(ids);
+        }}
+        onFpsReport={setBoardFps}
       />
     </div>
   );

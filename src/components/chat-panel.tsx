@@ -14,6 +14,9 @@ interface ChatPanelProps {
   interviewMode?: boolean;
   /** Called after AI finishes streaming so the board can re-fetch elements created by tools */
   onAiFinished?: () => void;
+  /** When set, send this message once (e.g. "Create a SWOT analysis") and then clear via onClearInitialPrompt */
+  initialPrompt?: string | null;
+  onClearInitialPrompt?: () => void;
 }
 
 function getMessageText(m: UIMessage): string {
@@ -35,8 +38,18 @@ function plainText(s: string): string {
     .trim();
 }
 
-export function ChatPanel({ boardId, user, accessToken, onClose, interviewMode, onAiFinished }: ChatPanelProps) {
+function dbToUIMessage(row: { id: string; role: string; content: string }): UIMessage {
+  return {
+    id: row.id,
+    role: row.role as "user" | "assistant" | "system",
+    parts: [{ type: "text", text: row.content }],
+  };
+}
+
+export function ChatPanel({ boardId, user, accessToken, onClose, interviewMode, onAiFinished, initialPrompt, onClearInitialPrompt }: ChatPanelProps) {
   const [input, setInput] = useState("");
+  const lastSavedCountRef = useRef(0);
+  const initialPromptSentRef = useRef(false);
 
   const transport = useMemo(
     () =>
@@ -52,22 +65,63 @@ export function ChatPanel({ boardId, user, accessToken, onClose, interviewMode, 
     [boardId, user?.id, accessToken, interviewMode]
   );
 
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, status, setMessages } = useChat({
     transport,
   });
 
   const isLoading = status === "streaming" || status === "submitted";
 
-  // When AI finishes streaming, refresh board elements so tool-created objects appear instantly
+  // When initialPrompt is set (e.g. from dashboard template), send it once when ready
+  useEffect(() => {
+    if (!initialPrompt?.trim() || initialPromptSentRef.current || status !== "ready" || !user) return;
+    initialPromptSentRef.current = true;
+    sendMessage({ text: initialPrompt.trim() });
+    onClearInitialPrompt?.();
+  }, [initialPrompt, status, sendMessage, user, onClearInitialPrompt]);
+
+  // Load AI chat history (last 24h) on mount
+  useEffect(() => {
+    if (!boardId || !accessToken) return;
+    let cancelled = false;
+    (async () => {
+      const res = await fetch(`/api/boards/${boardId}/ai-messages`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (cancelled || !res.ok) return;
+      const { messages: rows } = (await res.json()) as { messages: { id: string; role: string; content: string }[] };
+      const loaded = (rows ?? []).map(dbToUIMessage);
+      if (cancelled) return;
+      setMessages(loaded);
+      lastSavedCountRef.current = loaded.length;
+    })();
+    return () => { cancelled = true; };
+  }, [boardId, accessToken, setMessages]);
+
+  // When AI finishes streaming, refresh board elements and persist new messages (24h history)
   const prevStatusRef = useRef(status);
   useEffect(() => {
     const wasStreaming = prevStatusRef.current === "streaming" || prevStatusRef.current === "submitted";
     const nowReady = status === "ready";
     prevStatusRef.current = status;
-    if (wasStreaming && nowReady && onAiFinished) {
-      onAiFinished();
+    if (wasStreaming && nowReady) {
+      if (onAiFinished) onAiFinished();
+      const lastSaved = lastSavedCountRef.current;
+      if (messages.length > lastSaved && accessToken) {
+        const toSave = messages.slice(lastSaved).map((m) => ({
+          role: m.role,
+          content: getMessageText(m),
+        })).filter((m) => m.role === "user" || m.role === "assistant");
+        if (toSave.length > 0) {
+          lastSavedCountRef.current = messages.length;
+          fetch(`/api/boards/${boardId}/ai-messages`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+            body: JSON.stringify({ messages: toSave }),
+          }).catch(() => {});
+        }
+      }
     }
-  }, [status, onAiFinished]);
+  }, [status, onAiFinished, messages, boardId, accessToken]);
 
   const onSubmit = useCallback(
     (e: React.FormEvent) => {

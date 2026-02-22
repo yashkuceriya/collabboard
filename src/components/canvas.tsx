@@ -46,6 +46,10 @@ interface CanvasProps {
   onStressTest?: (count: number) => Promise<void>;
   /** Clear all objects (perf panel) */
   onClearBoard?: () => void;
+  /** Called when selection changes — used e.g. for "Zoom to selection" */
+  onSelectionChange?: (selectedId: string | null, selectedIds: string[]) => void;
+  /** Called every second with current FPS (for optional badge in normal UI) */
+  onFpsReport?: (fps: number) => void;
 }
 
 // Color name labels for cursors
@@ -127,6 +131,13 @@ function hitTestHandle(
 
 function clampSize(v: number) {
   return Math.max(MIN_SIZE, v);
+}
+
+function rectsOverlap(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number }
+): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 }
 
 const MIN_DRAW_SIZE = 24;
@@ -375,6 +386,8 @@ export function Canvas({
   syncLatencyRef,
   onStressTest,
   onClearBoard,
+  onSelectionChange,
+  onFpsReport,
 }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -396,6 +409,9 @@ export function Canvas({
   }, [viewport]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    onSelectionChange?.(selectedId, Array.from(selectedIds));
+  }, [selectedId, selectedIds, onSelectionChange]);
   const [marquee, setMarquee] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
@@ -1270,8 +1286,10 @@ export function Canvas({
   // FPS + perf sampling on interval (no refs read during render)
   useEffect(() => {
     const id = setInterval(() => {
-      fpsRef.current = frameCountRef.current;
-      setFps(frameCountRef.current);
+      const currentFps = frameCountRef.current;
+      fpsRef.current = currentFps;
+      setFps(currentFps);
+      onFpsReport?.(currentFps);
       setPerfVisibleCount(visibleCountRef.current);
       setPerfCursorLatency(cursorLatencyRef?.current ?? null);
       setPerfSyncLatency(syncLatencyRef?.current ?? null);
@@ -1953,34 +1971,6 @@ export function Canvas({
           onClearBoard={onClearBoard}
         />
       )}
-      {/* Zoom controls — bottom right (Miro-style) */}
-      <div className="absolute bottom-20 right-4 z-20 flex items-center gap-0.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-xl border border-gray-200/50 dark:border-gray-800/50 shadow-lg px-1 py-1">
-        <button
-          type="button"
-          onClick={() => onViewportChange({ ...viewport, zoom: Math.max(0.1, Math.round((viewport.zoom - 0.1) * 10) / 10) })}
-          className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors active:scale-90"
-          title="Zoom out (Ctrl+-)"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => onViewportChange({ zoom: 1, x: 0, y: 0 })}
-          className="text-[11px] font-medium text-gray-600 dark:text-gray-300 min-w-[3rem] text-center tabular-nums rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 py-1 transition-colors"
-          title="Reset to 100%"
-        >
-          {Math.round(viewport.zoom * 100)}%
-        </button>
-        <button
-          type="button"
-          onClick={() => onViewportChange({ ...viewport, zoom: Math.min(5, Math.round((viewport.zoom + 0.1) * 10) / 10) })}
-          className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors active:scale-90"
-          title="Zoom in (Ctrl+=)"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        </button>
-      </div>
-
       {/* Connector tool hint — makes it clear arrows connect shapes */}
       {tool === "connector" && (
         <div className="absolute bottom-14 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-xl bg-gray-900/90 dark:bg-gray-100/90 text-white dark:text-gray-900 text-xs font-medium shadow-lg border border-gray-700/50 dark:border-gray-300/50">
@@ -2263,6 +2253,9 @@ export function Canvas({
       {selectedId && !editingId && selectedElement && selectedElement.type !== "connector" && (() => {
         const el = selectedElement;
         const anchor = worldToScreen(el.x + el.width / 2, el.y - 8);
+        const hasOverlappingOthers = elements.some(
+          (e) => e.id !== el.id && e.type !== "connector" && rectsOverlap(el, e)
+        );
         return (
           <div
             className="absolute z-20 flex items-center gap-2 flex-wrap justify-center"
@@ -2291,7 +2284,7 @@ export function Canvas({
                 Duplicate
               </button>
             )}
-            {(onBringToFront || onSendToBack) && (
+            {(onBringToFront || onSendToBack) && hasOverlappingOthers && (
               <>
                 {onBringToFront && (
                   <button
