@@ -66,7 +66,7 @@ const MIN_SIZE = 24;
 /** Inset (px) so only elements fully inside the frame bounds are captured */
 const FRAME_INSET = 2;
 
-const ROTATION_HANDLE_OFFSET = 28;
+const ROTATION_HANDLE_OFFSET = 44;
 const ROTATION_HANDLE_RADIUS = 8;
 const CARDINAL_SNAP_DEG = 2;
 
@@ -1192,31 +1192,7 @@ export function Canvas({
       ctx.restore();
     }
 
-    // Resize handles — rounded squares, constant screen-space (Miro-style)
-    if (selectedId && !resizing) {
-      const el = elements.find((e) => e.id === selectedId);
-      if (el && el.type !== "connector" && el.type !== "freehand") {
-        const handles = getResizeHandles(el);
-        const hSize = HANDLE_SIZE_WORLD / effectiveViewport.zoom;
-        const hHalf = hSize / 2;
-        const hRadius = 2 / effectiveViewport.zoom;
-        ctx.fillStyle = isDark ? "#1e293b" : "#fff";
-        ctx.strokeStyle = isDark ? "#60a5fa" : "#3b82f6";
-        ctx.lineWidth = 1.5 / effectiveViewport.zoom;
-        ctx.shadowColor = "rgba(0,0,0,0.15)";
-        ctx.shadowBlur = 3 / effectiveViewport.zoom;
-        ctx.shadowOffsetY = 1 / effectiveViewport.zoom;
-        for (const { x: hx, y: hy } of handles) {
-          ctx.beginPath();
-          ctx.roundRect(hx - hHalf, hy - hHalf, hSize, hSize, hRadius);
-          ctx.fill();
-          ctx.stroke();
-        }
-        ctx.shadowColor = "transparent";
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetY = 0;
-      }
-    }
+    // Resize handles omitted — use format panel / toolbar to resize (cleaner selection UI)
 
     ctx.restore();
 
