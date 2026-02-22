@@ -17,3 +17,16 @@ export function getInitials(displayName: string): string {
   if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   return (displayName[0] ?? "?").toUpperCase();
 }
+
+/** Avatar display: emoji if set in user_metadata, otherwise initials from display name */
+export function getAvatarDisplay(
+  user: { email?: string | null; user_metadata?: Record<string, unknown> } | null | undefined,
+  displayName?: string
+): string {
+  if (!user) return "?";
+  const meta = user.user_metadata;
+  const emoji = (meta?.avatar_emoji as string)?.trim();
+  if (emoji) return emoji.slice(0, 2); // single emoji or two chars
+  const name = displayName ?? getDisplayName(user);
+  return getInitials(name);
+}

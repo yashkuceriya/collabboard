@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import type { Peer } from "@/hooks/use-presence";
 import type { User } from "@supabase/supabase-js";
-import { getDisplayName, getInitials } from "@/lib/display-name";
+import { getDisplayName, getInitials, getAvatarDisplay } from "@/lib/display-name";
 
 const COLORS = [
   "#EF4444",
@@ -44,11 +44,13 @@ export function PresenceBar({ peers, user }: PresenceBarProps) {
 
   const onlineList: { id: string; email: string; isYou: boolean; color: string }[] = [];
   if (user) {
+    const meta = user.user_metadata as Record<string, unknown> | undefined;
+    const avatarColor = (meta?.avatar_color as string) ?? "#6366F1";
     onlineList.push({
       id: user.id,
       email: user.email ?? "",
       isYou: true,
-      color: "#6366F1",
+      color: avatarColor,
     });
   }
   peers.forEach((p, i) => {
@@ -78,7 +80,7 @@ export function PresenceBar({ peers, user }: PresenceBarProps) {
               style={{ backgroundColor: u.color }}
               title={u.isYou ? `${u.email} (you)` : u.email || "User"}
             >
-              {getInitials(peerDisplayName(u.email, u.isYou))}
+              {u.isYou && user ? getAvatarDisplay(user) : getInitials(peerDisplayName(u.email, u.isYou))}
             </div>
           ))}
           {onlineList.length > 4 && (
@@ -113,7 +115,7 @@ export function PresenceBar({ peers, user }: PresenceBarProps) {
                   className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0 border-2 border-white dark:border-gray-900 shadow-sm"
                   style={{ backgroundColor: u.color }}
                 >
-                  {getInitials(peerDisplayName(u.email, u.isYou))}
+                  {u.isYou && user ? getAvatarDisplay(user) : getInitials(peerDisplayName(u.email, u.isYou))}
                 </div>
                 <div className="min-w-0 flex-1">
                   <span className="text-sm font-medium text-gray-800 dark:text-gray-200 block truncate">
