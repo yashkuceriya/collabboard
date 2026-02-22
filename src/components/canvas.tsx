@@ -78,7 +78,7 @@ function rotatePoint(px: number, py: number, cx: number, cy: number, rad: number
 function getRotationHandlePos(el: { x: number; y: number; width: number; height: number }, zoom: number): { x: number; y: number } {
   return {
     x: el.x + el.width / 2,
-    y: el.y - ROTATION_HANDLE_OFFSET / zoom,
+    y: el.y + el.height + ROTATION_HANDLE_OFFSET / zoom,
   };
 }
 
@@ -1846,9 +1846,8 @@ export function Canvas({
   const canDeleteSelected =
     selectedId &&
     !editingId &&
-    currentUserId &&
     selectedElement &&
-    (selectedElement.created_by === currentUserId || selectedElement.type === "connector");
+    (selectedElement.type === "connector" || (currentUserId && selectedElement.created_by === currentUserId));
   const showColorPicker = selectedElement && selectedElement.type !== "connector";
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -2144,7 +2143,7 @@ export function Canvas({
         </div>
       )}
 
-      {/* Rotation handle — small grab handle above selected element */}
+      {/* Rotation handle — small grab handle below selected element (menus sit above) */}
       {selectedId && !editingId && selectedElement && selectedElement.type !== "connector" && (() => {
         const rotatableTypes = ["sticky_note", "rectangle", "circle", "text", "frame", "line", "freehand"];
         const el = selectedElement;
@@ -2153,7 +2152,7 @@ export function Canvas({
         const cy = el.y + el.height / 2;
         const handlePos = getRotationHandlePos(el, viewport.zoom);
         const screenHandle = worldToScreen(handlePos.x, handlePos.y);
-        const screenTopCenter = worldToScreen(cx, el.y);
+        const screenBottomCenter = worldToScreen(cx, el.y + el.height);
         const rot = rotationDraft ?? (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
         const isActive = rotating !== null;
         const handleColor = isDark ? "#60a5fa" : "#3b82f6";
@@ -2166,8 +2165,8 @@ export function Canvas({
               {!isActive && (
                 <>
                   <line
-                    x1={screenTopCenter.x}
-                    y1={screenTopCenter.y}
+                    x1={screenBottomCenter.x}
+                    y1={screenBottomCenter.y}
                     x2={screenHandle.x}
                     y2={screenHandle.y}
                     stroke={handleColor}
@@ -2379,17 +2378,15 @@ export function Canvas({
                 <svg width="16" height="10" viewBox="0 0 16 10"><line x1="0" y1="5" x2="16" y2="5" stroke="currentColor" strokeWidth={t === "thin" ? 1 : t === "medium" ? 2 : 4} strokeLinecap="round" /></svg>
               </button>
             ))}
-            {canDeleteSelected && (
-              <button
-                type="button"
-                onClick={() => { onDelete(selectedId!); setSelectedId(null); }}
-                onMouseDown={(e) => e.stopPropagation()}
-                className="px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-md border border-red-200 dark:border-red-800"
-                title="Delete"
-              >
-                Delete
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => { onDelete(selectedId!); setSelectedId(null); }}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-md border border-red-200 dark:border-red-800"
+              title="Delete connector"
+            >
+              Delete
+            </button>
           </div>
         );
       })()}
