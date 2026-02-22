@@ -1,0 +1,80 @@
+================================================================================
+COLLABBOARD — PRODUCT FRAMING FOR FINAL SUBMISSION
+Use this to open README, demo video, and any written submission.
+================================================================================
+Do not commit to git until you're ready. For submission clarity only.
+================================================================================
+
+TIGHT INTRODUCTION (30–45 seconds)
+-----------------------------------
+Use this first. Then walk through features in a structured way.
+
+"CollabBoard is a real-time collaborative whiteboard for teams who need to
+think visually and move fast — brainstorming, onboarding, retrospectives,
+and especially practice for technical interviews.
+
+Who it's for: Anyone running workshops, product teams doing retros, and
+candidates prepping for system-design or coding interviews. The differentiator
+is the interview board: you get a dedicated board mode and an AI that acts like
+an interviewer — it helps you break down problems, suggests what to draw
+(boxes for services, arrows for data flow), asks clarifying questions, and
+points out what you might be missing. So you're not just drawing alone; you're
+practicing with structure.
+
+Why it exists: Whiteboards are great for thinking out loud, but setting up
+templates and keeping everyone in sync is friction. CollabBoard gives you
+real-time collaboration (cursors, presence, instant sync), frames and
+connectors so structure is clear, and an AI that can generate useful layouts
+from a single prompt — like 'Create an onboarding plan for a new sales hire'
+or 'Set up a retrospective with What Went Well, What Didn't, Action Items.'
+The value is obvious from the start: you open a board, you know who's there,
+and you can either collaborate live or use the AI to get a structured canvas
+in seconds."
+
+ONE-LINER (for README or first slide)
+--------------------------------------
+"CollabBoard is a real-time collaborative whiteboard with an AI assistant —
+built for teams and for interview prep, with structured templates and
+multi-user sync so the value is obvious from the start."
+
+STRUCTURED FEATURE WALK (after the intro)
+-----------------------------------------
+Present in this order so the narrative is clear.
+
+1. Core value (what you just said): Teams + interview prep; AI that generates
+   useful, structured output (onboarding, retros, SWOT, user journeys).
+
+2. Real-time collaboration: Multi-user cursors, presence (who's online),
+   instant object sync. Same board, same view — no refresh needed.
+
+3. AI agent: Natural-language commands. Creation (stickies, shapes, frames),
+   manipulation (move, resize, color), layout (grids, spacing), and complex
+   templates (SWOT, retrospective, user journey, kanban). Single prompt →
+   clean layout via createTemplate.
+
+4. Interview mode: Dedicated board type and AI behavior — interviewer-style
+   prompts, step-by-step breakdown, suggestions for what to draw, clarifying
+   questions. Strong differentiator; anchor the story here when you mention
+   "who it's for."
+
+5. Canvas and UX: Infinite pan/zoom, connectors with clear targets, frames
+   (group and move with children), rotation, freehand. So it feels like a
+   real whiteboard, not a toy.
+
+6. Sharing and access: Boards you own, boards shared with you (invite by
+   email), leave board without affecting others. Google auth and email auth.
+
+7. Technical depth (if asked): Postgres as source of truth, Supabase
+   Realtime for sync and cursors, LWW for conflicts, AI writing to the same
+   data layer so everyone sees AI output in real time.
+
+REMINDER
+--------
+- Start with: what it is, who it's for, why it exists.
+- Lead with interview board + AI so the value is obvious from the start.
+- Then walk through features in a structured way (value → collaboration →
+  AI → interview mode → canvas → sharing).
+
+================================================================================
+END OF PRODUCT FRAMING
+================================================================================

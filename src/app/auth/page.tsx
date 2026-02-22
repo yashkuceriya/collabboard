@@ -76,23 +76,34 @@ export default function AuthPage() {
     }
   }
 
+  const passwordStrength = password.length === 0 ? null : password.length < 6 ? "weak" : password.length < 10 ? "medium" : "strong";
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-950 dark:via-gray-950 dark:to-gray-900 px-4">
-      <div className="w-full max-w-sm">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-950 dark:via-gray-950 dark:to-gray-900 px-4 relative overflow-hidden">
+      {/* Animated floating shapes */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
+        <div className="absolute w-72 h-72 rounded-full bg-blue-200/30 dark:bg-blue-900/20 -top-20 -left-20 animate-[float_20s_ease-in-out_infinite]" />
+        <div className="absolute w-48 h-48 rounded-2xl bg-indigo-200/25 dark:bg-indigo-900/15 top-1/4 right-10 rotate-12 animate-[float_25s_ease-in-out_infinite_reverse]" />
+        <div className="absolute w-32 h-32 rounded-full bg-purple-200/20 dark:bg-purple-900/10 bottom-32 left-1/4 animate-[float_18s_ease-in-out_infinite_2s]" />
+        <div className="absolute w-56 h-56 rounded-3xl bg-sky-200/20 dark:bg-sky-900/10 -bottom-10 right-1/4 -rotate-6 animate-[float_22s_ease-in-out_infinite_reverse_1s]" />
+        <div className="absolute w-20 h-20 rounded-lg bg-amber-200/20 dark:bg-amber-900/10 top-20 left-1/3 rotate-45 animate-[float_15s_ease-in-out_infinite_3s]" />
+      </div>
+
+      <div className="w-full max-w-sm relative z-10">
         {/* Logo area */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/30 mb-4">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-xl shadow-blue-500/30 mb-4 ring-4 ring-white/50 dark:ring-gray-800/50">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="3" />
               <path d="M9 8h6M8 12h8M9 16h6" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">CollabBoard</h1>
-          <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Real-time collaborative whiteboard</p>
+          <h1 className="text-3xl font-extrabold text-gray-900 dark:text-gray-100 tracking-tight">CollabBoard</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5 font-medium">Think together. Build together.</p>
         </div>
 
         {/* Card */}
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl shadow-gray-200/60 dark:shadow-black/40 border border-gray-200/60 dark:border-gray-800/60 p-7">
+        <div className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl rounded-2xl shadow-2xl shadow-gray-200/60 dark:shadow-black/40 border border-gray-200/60 dark:border-gray-800/60 p-7">
           <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-5 text-center">
             {isSignUp ? "Create your account" : "Welcome back"}
           </h2>
@@ -102,7 +113,7 @@ export default function AuthPage() {
             type="button"
             onClick={handleGoogleSignIn}
             disabled={loading}
-            className="w-full py-2.5 mb-4 flex items-center justify-center gap-2.5 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-200 transition-colors disabled:opacity-50"
+            className="w-full py-2.5 mb-4 flex items-center justify-center gap-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 hover:shadow-md hover:-translate-y-0.5 text-sm font-medium text-gray-700 dark:text-gray-200 transition-all duration-200 disabled:opacity-50 shadow-sm"
           >
             <svg width="18" height="18" viewBox="0 0 48 48">
               <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z" />
@@ -118,7 +129,7 @@ export default function AuthPage() {
               <div className="w-full border-t border-gray-200 dark:border-gray-700" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white dark:bg-gray-900 px-2 text-gray-400 dark:text-gray-500">or</span>
+              <span className="bg-white/80 dark:bg-gray-900/80 px-2 text-gray-400 dark:text-gray-500">or</span>
             </div>
           </div>
 
@@ -130,7 +141,7 @@ export default function AuthPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full px-3.5 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm transition-colors placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                className="w-full px-3.5 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50/80 dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm transition-colors placeholder:text-gray-400 dark:placeholder:text-gray-500"
                 placeholder="you@example.com"
               />
             </div>
@@ -142,10 +153,18 @@ export default function AuthPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={6}
-                className="w-full px-3.5 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm transition-colors placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                className="w-full px-3.5 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50/80 dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm transition-colors placeholder:text-gray-400 dark:placeholder:text-gray-500"
                 placeholder="••••••••"
               />
-              <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">Min 6 characters</p>
+              {isSignUp && passwordStrength && (
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="flex-1 h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-300 ${passwordStrength === "weak" ? "w-1/3 bg-red-400" : passwordStrength === "medium" ? "w-2/3 bg-amber-400" : "w-full bg-green-400"}`} />
+                  </div>
+                  <span className={`text-[10px] font-medium capitalize ${passwordStrength === "weak" ? "text-red-500" : passwordStrength === "medium" ? "text-amber-500" : "text-green-500"}`}>{passwordStrength}</span>
+                </div>
+              )}
+              {!isSignUp && <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">Min 6 characters</p>}
             </div>
 
             {success && (
@@ -158,7 +177,7 @@ export default function AuthPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-xl disabled:opacity-50 text-sm font-medium transition-all shadow-sm shadow-blue-500/25"
+              className="w-full py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-xl disabled:opacity-50 text-sm font-medium transition-all shadow-md shadow-blue-500/25 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5 active:translate-y-0"
             >
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
@@ -179,7 +198,42 @@ export default function AuthPage() {
             {isSignUp ? "Sign In" : "Sign Up"}
           </button>
         </p>
+
+        {/* Feature highlights */}
+        <div className="mt-8 flex items-center justify-center gap-6">
+          <div className="flex flex-col items-center gap-1.5">
+            <div className="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" /></svg>
+            </div>
+            <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">Real-time</span>
+          </div>
+          <div className="flex flex-col items-center gap-1.5">
+            <div className="w-9 h-9 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><path d="M12 2a4 4 0 014 4c0 1.95-2 4-4 6-2-2-4-4.05-4-6a4 4 0 014-4z" /><path d="M4.93 10.93a10 10 0 0014.14 0" /><path d="M2.5 16.5a14 14 0 0019 0" /></svg>
+            </div>
+            <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">AI-Powered</span>
+          </div>
+          <div className="flex flex-col items-center gap-1.5">
+            <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
+            </div>
+            <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">Interview Ready</span>
+          </div>
+        </div>
       </div>
+
+      {/* Powered by footer */}
+      <p className="absolute bottom-4 text-[11px] text-gray-400 dark:text-gray-600">
+        Built with Next.js, Supabase &amp; OpenAI
+      </p>
+
+      <style jsx>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0) rotate(0deg); }
+          33% { transform: translateY(-20px) rotate(2deg); }
+          66% { transform: translateY(10px) rotate(-1deg); }
+        }
+      `}</style>
     </div>
   );
 }

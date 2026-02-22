@@ -9,6 +9,7 @@ import { ThemeSwitcher } from "@/components/theme-switcher";
 import { BoardPreview } from "@/components/board-preview";
 import { ShareBoardModal } from "@/components/share-board-modal";
 import { getRecentBoardIds, removeRecentBoard, clearRecentBoards } from "@/lib/recent-boards";
+import { getDisplayName } from "@/lib/display-name";
 
 export type BoardWithAccess = Board & { access: "owner" | "shared" };
 
@@ -254,7 +255,7 @@ export default function DashboardPage() {
         <div className="flex items-center gap-4">
           <ThemeSwitcher />
           <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
-          <span className="text-sm text-gray-500 dark:text-gray-400">{user?.email}</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">{user ? getDisplayName(user) : ""}</span>
           <button
             onClick={handleSignOut}
             className="text-sm text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"

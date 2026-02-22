@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import type { BoardChatMessage } from "@/lib/types/database";
 import type { User } from "@supabase/supabase-js";
+import { getDisplayName } from "@/lib/display-name";
 
 interface BoardChatPanelProps {
   boardId: string;
@@ -48,7 +49,7 @@ export function BoardChatPanel({ user, messages, loading, onSend, onClose, peerC
     }
   };
 
-  const displayName = (email: string) => (email && email !== "Anonymous" ? email.split("@")[0] : "Someone");
+  const displayNameFromEmail = (email: string) => getDisplayName({ email: email || undefined });
 
   return (
     <div className="absolute right-0 top-0 bottom-0 w-[320px] bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-l border-gray-200/50 dark:border-gray-800/50 shadow-2xl flex flex-col z-30">
@@ -95,7 +96,7 @@ export function BoardChatPanel({ user, messages, loading, onSend, onClose, peerC
               <div key={m.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[85%] rounded-2xl px-3 py-2 ${isMe ? "bg-gradient-to-r from-sky-500 to-blue-500 text-white rounded-br-md" : "bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-bl-md"}`}>
                   {!isMe && (
-                    <p className="text-[10px] font-medium text-sky-600 dark:text-sky-400 mb-0.5">{displayName(m.user_email)}</p>
+                    <p className="text-[10px] font-medium text-sky-600 dark:text-sky-400 mb-0.5">{displayNameFromEmail(m.user_email)}</p>
                   )}
                   <p className="text-sm whitespace-pre-wrap break-words">{m.body}</p>
                   <p className={`text-[10px] mt-0.5 ${isMe ? "text-sky-100" : "text-gray-400 dark:text-gray-500"}`}>{formatTime(m.created_at)}</p>

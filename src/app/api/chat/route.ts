@@ -49,18 +49,32 @@ export async function POST(req: Request) {
 
   const supabase = getSupabase(accessToken);
 
-  // Helper: ensure an element exists on this board and return it (or null). Use for validation before updates/deletes.
-  async function getElementById(id: string): Promise<{ id: string; type: string } | null> {
+  // Request-scoped board elements cache — avoids redundant DB queries within a single request
+  type BoardElemRow = { id: string; type: string; x: number; y: number; width: number; height: number; color: string; text: string };
+  let _cachedElements: BoardElemRow[] | null = null;
+  async function getCachedElements(): Promise<BoardElemRow[]> {
+    if (_cachedElements) return _cachedElements;
     const { data } = await supabase
       .from("board_elements")
-      .select("id, type")
+      .select("id, type, x, y, width, height, color, text")
       .eq("board_id", boardId)
-      .eq("id", id)
-      .single();
-    return data as { id: string; type: string } | null;
+      .order("created_at", { ascending: true });
+    _cachedElements = (data ?? []) as BoardElemRow[];
+    return _cachedElements;
+  }
+  function invalidateCache() { _cachedElements = null; }
+
+  // Pre-fetch board state at request start for system prompt injection
+  const prefetchedElements = await getCachedElements();
+  const boardSnapshot = prefetchedElements.length > 0
+    ? `\n\nCURRENT BOARD STATE (${prefetchedElements.length} elements, pre-loaded — you usually do NOT need to call getBoardState unless you suspect the board changed mid-conversation):\n${JSON.stringify(prefetchedElements.map(e => ({ id: e.id, type: e.type, x: Math.round(e.x), y: Math.round(e.y), w: Math.round(e.width), h: Math.round(e.height), text: e.text?.slice(0, 60) })))}`
+    : "\n\nThe board is currently empty.";
+
+  async function getElementById(id: string): Promise<{ id: string; type: string } | null> {
+    const elements = await getCachedElements();
+    return elements.find(e => e.id === id) ?? null;
   }
 
-  // Contrast text color: dark text on light bg, light text on dark bg
   function contrastTextColor(hex: string): string {
     const c = hex.replace("#", "");
     if (c.length < 6) return "#1a1a1a";
@@ -72,36 +86,24 @@ export async function POST(req: Request) {
     return lum > 0.4 ? "#1a1a1a" : "#f3f4f6";
   }
 
-  // Helper: compute a position (x,y) that does not overlap existing non-connector elements.
   async function computeSuggestedPlacement(
     width: number = 200,
     height: number = 200
   ): Promise<{ x: number; y: number }> {
-    const { data } = await supabase
-      .from("board_elements")
-      .select("x, y, width, height")
-      .eq("board_id", boardId)
-      .neq("type", "connector");
-    const elements = (data ?? []) as { x: number; y: number; width: number; height: number }[];
+    const all = await getCachedElements();
+    const elements = all.filter(e => e.type !== "connector");
     const gap = 40;
     const padding = 60;
     if (elements.length === 0) return { x: padding, y: padding };
     const maxRight = Math.max(...elements.map((el) => el.x + el.width));
     const maxBottom = Math.max(...elements.map((el) => el.y + el.height));
-    // Try placing to the right
     if (maxRight + gap + width <= 3000) return { x: maxRight + gap, y: padding };
-    // Otherwise below
     return { x: padding, y: maxBottom + gap + height * 0 };
   }
 
-  // Check if (x,y,w,h) overlaps any existing element on the board
   async function hasOverlap(x: number, y: number, w: number, h: number): Promise<boolean> {
-    const { data } = await supabase
-      .from("board_elements")
-      .select("x, y, width, height")
-      .eq("board_id", boardId)
-      .neq("type", "connector");
-    const elements = (data ?? []) as { x: number; y: number; width: number; height: number }[];
+    const all = await getCachedElements();
+    const elements = all.filter(e => e.type !== "connector");
     return elements.some((el) =>
       x < el.x + el.width && x + w > el.x && y < el.y + el.height && y + h > el.y
     );
@@ -119,8 +121,9 @@ export async function POST(req: Request) {
     });
   }
 
-  // Convert UIMessage[] (parts-based) to ModelMessage[] (content-based) for streamText
-  const modelMessages = await convertToModelMessages(messages);
+  // Trim conversation history to last 10 messages to reduce token usage and latency
+  const trimmedMessages = messages.length > 10 ? messages.slice(-10) : messages;
+  const modelMessages = await convertToModelMessages(trimmedMessages);
 
   const result = streamFn({
     model: openai("gpt-4o-mini"),
@@ -181,20 +184,17 @@ Guidelines:
 - Use varied colors for sticky notes.
 - Default sticky note colors: #FFEB3B (yellow), #FF9800 (orange), #F48FB1 (pink), #CE93D8 (purple), #90CAF9 (blue), #80CBC4 (teal), #A5D6A7 (green).
 
-LATENCY: Prefer fewer tool rounds. Use createTemplate, generateIdeas, or createBulkStickyNotes for multi-element tasks — always ONE call. Only call getBoardState when you need element ids.`,
+LATENCY: Prefer fewer tool rounds. Use createTemplate, generateIdeas, or createBulkStickyNotes for multi-element tasks — always ONE call. The board state is pre-loaded below so you rarely need getBoardState.${boardSnapshot}`,
     messages: modelMessages,
     stopWhen: stepCountIs(3),
     tools: {
       getBoardState: tool({
-        description: "Get the current list of all elements on the board (id, type, x, y, width, height, color, text). Use this to understand what's on the board before making changes.",
+        description: "Get the current list of all elements on the board (id, type, x, y, width, height, color, text). Board state is already pre-loaded in the system prompt — only call this if you need the absolute latest state after making changes.",
         inputSchema: z.object({}),
         execute: async () => {
-          const { data } = await supabase
-            .from("board_elements")
-            .select("id, type, x, y, width, height, color, text")
-            .eq("board_id", boardId)
-            .order("created_at", { ascending: true });
-          return { elements: data ?? [] };
+          invalidateCache();
+          const elements = await getCachedElements();
+          return { elements };
         },
       }),
       getSuggestedPlacement: tool({

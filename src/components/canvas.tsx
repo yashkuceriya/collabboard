@@ -6,6 +6,7 @@ import { FormatPanel } from "@/components/format-panel";
 import { PerfPanel } from "@/components/perf-panel";
 import type { BoardElement, Json } from "@/lib/types/database";
 import type { Peer } from "@/hooks/use-presence";
+import { getDisplayName } from "@/lib/display-name";
 
 type ToolId = "select" | "sticky_note" | "rectangle" | "circle" | "line" | "text" | "connector" | "pen" | "eraser" | "frame";
 
@@ -61,7 +62,9 @@ const MIN_SIZE = 24;
 /** Inset (px) so only elements fully inside the frame bounds are captured */
 const FRAME_INSET = 2;
 
-const ROTATION_HANDLE_CORNER_OFFSET = 14;
+const ROTATION_RING_GAP = 18;
+const ROTATION_RING_WIDTH = 3;
+const CARDINAL_SNAP_DEG = 2;
 
 function rotatePoint(px: number, py: number, cx: number, cy: number, rad: number): { x: number; y: number } {
   const cos = Math.cos(rad);
@@ -70,6 +73,11 @@ function rotatePoint(px: number, py: number, cx: number, cy: number, rad: number
     x: cx + (px - cx) * cos - (py - cy) * sin,
     y: cy + (px - cx) * sin + (py - cy) * cos,
   };
+}
+
+function getRotationRingRadius(el: { width: number; height: number }, zoom: number): number {
+  const diagonal = Math.hypot(el.width, el.height) / 2;
+  return diagonal + ROTATION_RING_GAP / zoom;
 }
 
 function getResizeHandles(el: BoardElement): { handle: ResizeHandle; x: number; y: number }[] {
@@ -88,21 +96,17 @@ function getResizeHandles(el: BoardElement): { handle: ResizeHandle; x: number; 
   ];
 }
 
-function getRotationHandlePosition(el: BoardElement, draftRotation?: number | null): { x: number; y: number } {
+function isOnRotationRing(
+  worldX: number, worldY: number,
+  el: { x: number; y: number; width: number; height: number },
+  zoom: number,
+): boolean {
   const cx = el.x + el.width / 2;
   const cy = el.y + el.height / 2;
-  const rot = draftRotation ?? (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
-  const rad = (rot * Math.PI) / 180;
-  const cornerX = el.x + el.width;
-  const cornerY = el.y;
-  const rotated = rotatePoint(cornerX, cornerY, cx, cy, rad);
-  const dx = rotated.x - cx;
-  const dy = rotated.y - cy;
-  const dist = Math.hypot(dx, dy) || 1;
-  return {
-    x: rotated.x + (dx / dist) * ROTATION_HANDLE_CORNER_OFFSET,
-    y: rotated.y + (dy / dist) * ROTATION_HANDLE_CORNER_OFFSET,
-  };
+  const r = getRotationRingRadius(el, zoom);
+  const dist = Math.hypot(worldX - cx, worldY - cy);
+  const tolerance = 10 / zoom;
+  return dist >= r - tolerance && dist <= r + tolerance;
 }
 
 function hitTestHandle(
@@ -414,10 +418,14 @@ export function Canvas({
     startRotation: number;
   } | null>(null);
   const [rotationDraft, setRotationDraft] = useState<number | null>(null);
+  const rotationVelocityRef = useRef(0);
+  const lastRotationTimeRef = useRef(0);
+  const rotationMouseScreenRef = useRef<{ x: number; y: number } | null>(null);
   const [drawDraft, setDrawDraft] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
   const [connectorFromId, setConnectorFromId] = useState<string | null>(null);
   const [connectorFromPoint, setConnectorFromPoint] = useState<{ x: number; y: number } | null>(null);
   const [connectorPreview, setConnectorPreview] = useState<{ x: number; y: number } | null>(null);
+  const [connectorSnapTargetId, setConnectorSnapTargetId] = useState<string | null>(null);
   const [formatPanelOpen, setFormatPanelOpen] = useState(false);
   const [strokePoints, setStrokePoints] = useState<{ x: number; y: number }[]>([]);
   const [isErasing, setIsErasing] = useState(false);
@@ -888,18 +896,25 @@ export function Canvas({
 
       // Selection outline — single thin border (Miro/Figma-style). For text, cap size to avoid huge box when selected.
       if (el.id === selectedId || selectedIds.has(el.id) || isFrameChild) {
-        const gap = 3 / effectiveViewport.zoom;
-        const cornerR = 4 / effectiveViewport.zoom;
-        const maxOutline = 1200; // cap so text selection outline is never absurdly large
+        const gap = 4 / effectiveViewport.zoom;
+        const cornerR = 6 / effectiveViewport.zoom;
+        const maxOutline = 1200;
         const ow = el.type === "text" ? Math.min(width, maxOutline) : width;
         const oh = el.type === "text" ? Math.min(height, maxOutline) : height;
+        const isPrimary = el.id === selectedId;
+        ctx.save();
+        if (isPrimary) {
+          ctx.shadowColor = "#3b82f6";
+          ctx.shadowBlur = 6 / effectiveViewport.zoom;
+        }
         ctx.strokeStyle = isFrameChild ? "#818cf8" : (isDark ? "#60a5fa" : "#3b82f6");
-        ctx.lineWidth = 1.5 / effectiveViewport.zoom;
-        ctx.setLineDash(isFrameChild || (selectedIds.has(el.id) && el.id !== selectedId) ? [4 / effectiveViewport.zoom, 3 / effectiveViewport.zoom] : []);
+        ctx.lineWidth = (isPrimary ? 2 : 1.5) / effectiveViewport.zoom;
+        ctx.setLineDash(isFrameChild || (!isPrimary && selectedIds.has(el.id)) ? [5 / effectiveViewport.zoom, 3 / effectiveViewport.zoom] : []);
         ctx.beginPath();
         ctx.roundRect(x - gap, y - gap, ow + gap * 2, oh + gap * 2, cornerR);
         ctx.stroke();
         ctx.setLineDash([]);
+        ctx.restore();
       }
 
       ctx.restore();
@@ -920,12 +935,14 @@ export function Canvas({
       ctx.save();
       const connColor = el.color && el.color !== "#64748b" ? el.color : (el.id === selectedId ? "#3b82f6" : strokeColor);
       ctx.strokeStyle = el.id === selectedId ? "#3b82f6" : connColor;
-      ctx.lineWidth = (el.id === selectedId ? 2.5 : 2) / effectiveViewport.zoom;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
-      const connProps = el.properties as { style?: string; route?: string } | undefined;
+      const connProps = el.properties as { style?: string; route?: string; thickness?: string } | undefined;
       const connStyle = connProps?.style;
       const connRoute = connProps?.route ?? "curved";
+      const thicknessMap: Record<string, number> = { thin: 1.2, medium: 2, thick: 4 };
+      const lineW = (thicknessMap[connProps?.thickness ?? "medium"] ?? 2) / effectiveViewport.zoom;
+      ctx.lineWidth = el.id === selectedId ? lineW * 1.3 : lineW;
       if (connStyle === "dashed") ctx.setLineDash([8 / effectiveViewport.zoom, 4 / effectiveViewport.zoom]);
 
       let arrowAngle: number;
@@ -1072,7 +1089,30 @@ export function Canvas({
       ctx.restore();
     }
 
-    // Edge anchor dots: in connector mode, or in select mode on hover (so user can drag from anchor without Connect tool)
+    // Target shape highlight when snapping a connector
+    if (connectorFromId && connectorSnapTargetId) {
+      const targetEl = idToElement.get(connectorSnapTargetId);
+      if (targetEl && inView(targetEl.x, targetEl.y, targetEl.width, targetEl.height)) {
+        ctx.save();
+        ctx.strokeStyle = "#3b82f6";
+        ctx.lineWidth = 3 / effectiveViewport.zoom;
+        ctx.setLineDash([]);
+        ctx.shadowColor = "#3b82f6";
+        ctx.shadowBlur = 12 / effectiveViewport.zoom;
+        if (targetEl.type === "circle") {
+          ctx.beginPath();
+          ctx.ellipse(targetEl.x + targetEl.width / 2, targetEl.y + targetEl.height / 2, targetEl.width / 2, targetEl.height / 2, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        } else {
+          ctx.beginPath();
+          ctx.roundRect(targetEl.x, targetEl.y, targetEl.width, targetEl.height, 4 / effectiveViewport.zoom);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+
+    // Edge anchor dots: in connector mode, or in select mode on hover
     if (tool === "connector" || tool === "select") {
       const targetsToShow =
         connectorFromId
@@ -1082,15 +1122,21 @@ export function Canvas({
           : hoveredId
             ? elements.filter((e) => e.id === hoveredId && CONNECTABLE_TYPES.has(e.type))
             : [];
+      const anchorR = 7 / effectiveViewport.zoom;
       for (const hovEl of targetsToShow) {
         const anchors = getShapeAnchors(hovEl);
+        const isSnapTarget = hovEl.id === connectorSnapTargetId;
         ctx.save();
-        ctx.fillStyle = "#3b82f6";
+        if (isSnapTarget) {
+          ctx.shadowColor = "#3b82f6";
+          ctx.shadowBlur = 10 / effectiveViewport.zoom;
+        }
+        ctx.fillStyle = isSnapTarget ? "#2563eb" : "#3b82f6";
         ctx.strokeStyle = isDark ? "#1f2937" : "#fff";
-        ctx.lineWidth = 2 / effectiveViewport.zoom;
+        ctx.lineWidth = 2.5 / effectiveViewport.zoom;
         for (const a of anchors) {
           ctx.beginPath();
-          ctx.arc(a.x, a.y, 5 / effectiveViewport.zoom, 0, Math.PI * 2);
+          ctx.arc(a.x, a.y, isSnapTarget ? anchorR * 1.3 : anchorR, 0, Math.PI * 2);
           ctx.fill();
           ctx.stroke();
         }
@@ -1181,7 +1227,7 @@ export function Canvas({
       ctx.fill();
 
       // Name label
-      const name = peer.user_email?.split("@")[0] || "User";
+      const name = getDisplayName({ email: peer.user_email });
       ctx.font = "11px -apple-system, sans-serif";
       const tw = ctx.measureText(name).width;
       ctx.fillStyle = color;
@@ -1193,7 +1239,7 @@ export function Canvas({
       ctx.restore();
     });
     visibleCountRef.current = visibleDrawn;
-  }, [elements, sortedElements, viewport, selectedId, selectedIds, resizing, resizeDraft, rotationDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, hoveredId, strokePoints, idToElement]);
+  }, [elements, sortedElements, viewport, selectedId, selectedIds, resizing, resizeDraft, rotationDraft, peers, worldToScreen, isDark, drawDraft, marquee, tool, connectorFromId, connectorFromPoint, connectorPreview, connectorSnapTargetId, hoveredId, strokePoints, idToElement]);
 
   // Sampled perf metrics for panel (avoid reading refs during render)
   const [perfVisibleCount, setPerfVisibleCount] = useState(0);
@@ -1285,18 +1331,17 @@ export function Canvas({
             return;
           }
           const rotatableTypes = ["sticky_note", "rectangle", "circle", "text", "frame", "line", "freehand"];
-          if (rotatableTypes.includes(el.type)) {
-            const { x: rhx, y: rhy } = getRotationHandlePosition(el);
-            const screenHandle = worldToScreen(rhx, rhy);
-            if (Math.hypot(sx - screenHandle.x, sy - screenHandle.y) <= 18) {
-              const cx = el.x + el.width / 2;
-              const cy = el.y + el.height / 2;
-              const startAngle = Math.atan2(world.y - cy, world.x - cx);
-              const startRotation = (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
-              setRotating({ id: el.id, startAngle, startRotation });
-              setRotationDraft(startRotation);
-              return;
-            }
+          if (rotatableTypes.includes(el.type) && isOnRotationRing(world.x, world.y, el, viewport.zoom)) {
+            const cx = el.x + el.width / 2;
+            const cy = el.y + el.height / 2;
+            const startAngle = Math.atan2(world.y - cy, world.x - cx);
+            const startRotation = (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
+            setRotating({ id: el.id, startAngle, startRotation });
+            setRotationDraft(startRotation);
+            rotationVelocityRef.current = 0;
+            lastRotationTimeRef.current = performance.now();
+            rotationMouseScreenRef.current = { x: sx, y: sy };
+            return;
           }
         }
       }
@@ -1351,6 +1396,7 @@ export function Canvas({
         setConnectorFromId(null);
         setConnectorFromPoint(null);
         setConnectorPreview(null);
+        setConnectorSnapTargetId(null);
       }
     } else if (tool === "rectangle" || tool === "circle" || tool === "line" || tool === "frame") {
       setDrawDraft({ startX: world.x, startY: world.y, currentX: world.x, currentY: world.y });
@@ -1380,8 +1426,28 @@ export function Canvas({
         while (deltaDeg > 180) deltaDeg -= 360;
         while (deltaDeg < -180) deltaDeg += 360;
         let newRot = rotating.startRotation + deltaDeg;
-        if (e.shiftKey) newRot = Math.round(newRot / 15) * 15;
+        if (e.shiftKey) {
+          newRot = Math.round(newRot / 15) * 15;
+        } else {
+          for (const cardinal of [0, 90, 180, -180, -90, 270]) {
+            let diff = newRot - cardinal;
+            while (diff > 180) diff -= 360;
+            while (diff < -180) diff += 360;
+            if (Math.abs(diff) <= CARDINAL_SNAP_DEG) {
+              newRot = cardinal;
+              break;
+            }
+          }
+        }
+        const now = performance.now();
+        const dt = now - lastRotationTimeRef.current;
+        if (dt > 0) {
+          const prevRot = rotationDraft ?? rotating.startRotation;
+          rotationVelocityRef.current = (newRot - prevRot) / dt;
+          lastRotationTimeRef.current = now;
+        }
         setRotationDraft(newRot);
+        rotationMouseScreenRef.current = { x: sx, y: sy };
       }
       return;
     }
@@ -1412,8 +1478,9 @@ export function Canvas({
       setMarquee((m) => (m ? { ...m, currentX: world.x, currentY: world.y } : null));
     }
     if (connectorFromId) {
-      const SNAP_THRESHOLD = 24 / viewport.zoom;
+      const SNAP_THRESHOLD = 28 / viewport.zoom;
       let snapPt: { x: number; y: number } | null = null;
+      let snapTargetId: string | null = null;
       for (const el of elements) {
         if (el.id === connectorFromId || el.type === "connector" || el.type === "freehand" || !CONNECTABLE_TYPES.has(el.type)) continue;
         const ecx = el.x + el.width / 2;
@@ -1424,10 +1491,12 @@ export function Canvas({
         const edgePt = clipToShapeEdge(el, world.x, world.y);
         if (Math.hypot(world.x - edgePt.x, world.y - edgePt.y) <= SNAP_THRESHOLD) {
           snapPt = edgePt;
+          snapTargetId = el.id;
           break;
         }
       }
       setConnectorPreview(snapPt ?? { x: world.x, y: world.y });
+      setConnectorSnapTargetId(snapTargetId);
     }
 
     if (panning) {
@@ -1544,15 +1613,40 @@ export function Canvas({
   function handleMouseUp(e?: React.MouseEvent) {
     if (rotating) {
       const el = elements.find((x) => x.id === rotating.id);
-      if (el) {
-        let finalRot = rotationDraft ?? rotating.startRotation;
-        while (finalRot > 180) finalRot -= 360;
-        while (finalRot < -180) finalRot += 360;
-        const props = { ...(el.properties as Record<string, unknown>), rotation: finalRot };
-        onUpdate(rotating.id, { properties: props as BoardElement["properties"] });
+      const velocity = rotationVelocityRef.current;
+      rotationMouseScreenRef.current = null;
+      if (el && Math.abs(velocity) > 0.15) {
+        const elId = rotating.id;
+        const elProps = { ...(el.properties as Record<string, unknown>) };
+        let currentRot = rotationDraft ?? rotating.startRotation;
+        let v = velocity * 16;
+        const friction = 0.92;
+        setRotating(null);
+        function spinFrame() {
+          v *= friction;
+          currentRot += v;
+          if (Math.abs(v) < 0.05) {
+            while (currentRot > 180) currentRot -= 360;
+            while (currentRot < -180) currentRot += 360;
+            setRotationDraft(null);
+            onUpdate(elId, { properties: { ...elProps, rotation: currentRot } as BoardElement["properties"] });
+            return;
+          }
+          setRotationDraft(currentRot);
+          requestAnimationFrame(spinFrame);
+        }
+        requestAnimationFrame(spinFrame);
+      } else {
+        if (el) {
+          let finalRot = rotationDraft ?? rotating.startRotation;
+          while (finalRot > 180) finalRot -= 360;
+          while (finalRot < -180) finalRot += 360;
+          const props = { ...(el.properties as Record<string, unknown>), rotation: finalRot };
+          onUpdate(rotating.id, { properties: props as BoardElement["properties"] });
+        }
+        setRotating(null);
+        setRotationDraft(null);
       }
-      setRotating(null);
-      setRotationDraft(null);
     }
     if (marquee) {
       const mx1 = Math.min(marquee.startX, marquee.currentX);
@@ -1624,6 +1718,7 @@ export function Canvas({
       setConnectorFromId(null);
       setConnectorFromPoint(null);
       setConnectorPreview(null);
+      setConnectorSnapTargetId(null);
     }
     if (resizing && resizeDraft) {
       onUpdate(resizing.id, resizeDraft);
@@ -1920,11 +2015,27 @@ export function Canvas({
             <p className="text-base font-semibold text-gray-700 dark:text-gray-200 mb-1">
               {interviewMode ? "Interview Board" : "Your board is empty"}
             </p>
-            <p className="text-sm text-gray-400 dark:text-gray-500 mb-5 max-w-[280px]">
-              {interviewMode
-                ? "Draw system diagrams, write code, and sketch your solution. Use the AI assistant for hints."
-                : "Get started by adding an element"}
-            </p>
+            {interviewMode ? (
+              <div className="mb-5 max-w-[320px]">
+                <p className="text-sm text-gray-400 dark:text-gray-500 mb-3">Get started in 3 steps:</p>
+                <div className="flex flex-col gap-2 text-left">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 text-xs font-bold flex items-center justify-center shrink-0">1</span>
+                    <span className="text-xs text-gray-600 dark:text-gray-300">Pick a template from the toolbar above</span>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-300 text-xs font-bold flex items-center justify-center shrink-0">2</span>
+                    <span className="text-xs text-gray-600 dark:text-gray-300">Set your timer (15-60 min)</span>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300 text-xs font-bold flex items-center justify-center shrink-0">3</span>
+                    <span className="text-xs text-gray-600 dark:text-gray-300">Start solving -- use AI for hints</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 dark:text-gray-500 mb-5 max-w-[280px]">Get started by adding an element</p>
+            )}
             <div className="flex gap-2 justify-center flex-wrap">
               {interviewMode ? (
                 <>
@@ -2034,57 +2145,112 @@ export function Canvas({
         </div>
       )}
 
-      {/* Rotation handle overlay — above toolbar (z-30) so it stays visible and clickable */}
+      {/* Rotation ring overlay — circular ring around selected element for free rotation */}
       {selectedId && !editingId && selectedElement && selectedElement.type !== "connector" && (() => {
         const rotatableTypes = ["sticky_note", "rectangle", "circle", "text", "frame", "line", "freehand"];
         const el = selectedElement;
         if (!el || !rotatableTypes.includes(el.type)) return null;
-        const { x: rhx, y: rhy } = getRotationHandlePosition(el, rotationDraft ?? undefined);
         const cx = el.x + el.width / 2;
         const cy = el.y + el.height / 2;
+        const ringR = getRotationRingRadius(el, viewport.zoom);
+        const screenCenter = worldToScreen(cx, cy);
+        const screenR = ringR * viewport.zoom;
         const rot = rotationDraft ?? (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
-        const rad = (rot * Math.PI) / 180;
-        const cornerWorld = rotatePoint(el.x + el.width, el.y, cx, cy, rad);
-        const screenCorner = worldToScreen(cornerWorld.x, cornerWorld.y);
-        const screenHandle = worldToScreen(rhx, rhy);
-        const handleRadius = 14;
+        const isActive = rotating !== null;
+        const ringColor = isDark ? "#60a5fa" : "#3b82f6";
+        const showAngle = isActive && rotationMouseScreenRef.current;
+        const normalizedRot = ((rot % 360) + 360) % 360;
+        const displayDeg = normalizedRot > 180 ? normalizedRot - 360 : normalizedRot;
         return (
           <div className="absolute inset-0 pointer-events-none z-30" aria-hidden>
-            <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: "visible" }}>
-              <line
-                x1={screenCorner.x}
-                y1={screenCorner.y}
-                x2={screenHandle.x}
-                y2={screenHandle.y}
-                stroke={isDark ? "#60a5fa" : "#3b82f6"}
-                strokeWidth={1.5}
-                strokeLinecap="round"
-              />
+            <svg className="absolute inset-0 w-full h-full" style={{ overflow: "visible", pointerEvents: "none" }}>
+              {/* Ring + tick marks only visible when NOT actively rotating */}
+              {!isActive && (
+                <>
+                  <circle
+                    cx={screenCenter.x}
+                    cy={screenCenter.y}
+                    r={screenR}
+                    fill="none"
+                    stroke={ringColor}
+                    strokeWidth={ROTATION_RING_WIDTH}
+                    strokeDasharray="6 4"
+                    opacity={0.35}
+                    style={{ pointerEvents: "stroke", cursor: "grab" }}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      const rect = canvasRef.current?.getBoundingClientRect();
+                      if (!rect) return;
+                      const sx = e.clientX - rect.left;
+                      const sy = e.clientY - rect.top;
+                      const w = screenToWorld(sx, sy);
+                      const startAngle = Math.atan2(w.y - cy, w.x - cx);
+                      const startRotation = (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
+                      setRotating({ id: el.id, startAngle, startRotation });
+                      setRotationDraft(startRotation);
+                      rotationVelocityRef.current = 0;
+                      lastRotationTimeRef.current = performance.now();
+                      rotationMouseScreenRef.current = { x: sx, y: sy };
+                    }}
+                  />
+                  {[0, 90, 180, 270].map((deg) => {
+                    const tickRad = (deg * Math.PI) / 180;
+                    const inner = screenR - 6;
+                    const outer = screenR + 6;
+                    return (
+                      <line
+                        key={deg}
+                        x1={screenCenter.x + Math.cos(tickRad) * inner}
+                        y1={screenCenter.y + Math.sin(tickRad) * inner}
+                        x2={screenCenter.x + Math.cos(tickRad) * outer}
+                        y2={screenCenter.y + Math.sin(tickRad) * outer}
+                        stroke={ringColor}
+                        strokeWidth={1.5}
+                        opacity={0.4}
+                      />
+                    );
+                  })}
+                </>
+              )}
             </svg>
-            <div
-              className="absolute rounded-full border-2 bg-white dark:bg-slate-800 border-blue-500 dark:border-blue-400 shadow-md pointer-events-auto"
-              style={{
-                left: screenHandle.x - handleRadius,
-                top: screenHandle.y - handleRadius,
-                width: handleRadius * 2,
-                height: handleRadius * 2,
-                cursor: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2'%3E%3Cpath d='M4 12a8 8 0 0 1 14.3-4.8'/%3E%3Cpath d='M20 4v4h-4'/%3E%3C/svg%3E\") 12 12, grab",
-              }}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                const rect = canvasRef.current?.getBoundingClientRect();
-                if (!rect) return;
-                const sx = e.clientX - rect.left;
-                const sy = e.clientY - rect.top;
-                const world = screenToWorld(sx, sy);
-                const startAngle = Math.atan2(world.y - cy, world.x - cx);
-                const startRotation = (el.properties as { rotation?: number } | null | undefined)?.rotation ?? 0;
-                setRotating({ id: el.id, startAngle, startRotation });
-                setRotationDraft(startRotation);
-              }}
-              title="Drag to rotate"
-            />
+            {/* Angle tooltip near cursor while dragging */}
+            {showAngle && rotationMouseScreenRef.current && (
+              <div
+                className="absolute px-2 py-1 rounded-lg text-xs font-mono font-bold shadow-lg border"
+                style={{
+                  left: rotationMouseScreenRef.current.x + 20,
+                  top: rotationMouseScreenRef.current.y - 10,
+                  backgroundColor: isDark ? "rgba(30,41,59,0.95)" : "rgba(255,255,255,0.95)",
+                  color: isDark ? "#f472b6" : "#ec4899",
+                  borderColor: isDark ? "#475569" : "#e2e8f0",
+                }}
+              >
+                {Math.round(displayDeg)}°
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Size label while resizing */}
+      {resizing && resizeDraft && (() => {
+        const w = Math.round(resizeDraft.width);
+        const h = Math.round(resizeDraft.height);
+        const bottomCenter = worldToScreen(resizeDraft.x + resizeDraft.width / 2, resizeDraft.y + resizeDraft.height + 12 / viewport.zoom);
+        return (
+          <div
+            className="absolute z-30 px-2 py-1 rounded-md text-[11px] font-mono font-bold shadow-md border pointer-events-none"
+            style={{
+              left: bottomCenter.x,
+              top: bottomCenter.y,
+              transform: "translate(-50%, 0)",
+              backgroundColor: isDark ? "rgba(30,41,59,0.95)" : "rgba(255,255,255,0.95)",
+              color: isDark ? "#93c5fd" : "#3b82f6",
+              borderColor: isDark ? "#475569" : "#e2e8f0",
+            }}
+          >
+            {w} x {h}
           </div>
         );
       })()}
@@ -2171,6 +2337,7 @@ export function Canvas({
         const anchor = worldToScreen((pts.x1 + pts.x2) / 2, (pts.y1 + pts.y2) / 2 - 20);
         const connProps = el.properties as Record<string, string> | undefined;
         const currentRoute = (connProps?.route || "curved") as "straight" | "orthogonal" | "curved";
+        const currentThickness = (connProps?.thickness || "medium") as "thin" | "medium" | "thick";
         const mergeProps = (patch: Record<string, unknown>) => {
           const existingProps = (el.properties as Record<string, unknown>) || {};
           onUpdate(el.id, { properties: { ...existingProps, ...patch } as BoardElement["properties"] });
@@ -2192,6 +2359,19 @@ export function Canvas({
                 className={`${routeBtn} ${currentRoute === route ? routeActive : routeInactive}`}
               >
                 {route === "orthogonal" ? "Elbow" : route.charAt(0).toUpperCase() + route.slice(1)}
+              </button>
+            ))}
+            <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
+            {(["thin", "medium", "thick"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); mergeProps({ thickness: t }); }}
+                onMouseDown={(e) => e.stopPropagation()}
+                className={`${routeBtn} ${currentThickness === t ? routeActive : routeInactive}`}
+                title={`${t} line`}
+              >
+                <svg width="16" height="10" viewBox="0 0 16 10"><line x1="0" y1="5" x2="16" y2="5" stroke="currentColor" strokeWidth={t === "thin" ? 1 : t === "medium" ? 2 : 4} strokeLinecap="round" /></svg>
               </button>
             ))}
             {canDeleteSelected && (
