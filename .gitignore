@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local submission / not for git
+AI-DEVELOPMENT-LOG.txt
+VIDEO-DEMO-SCRIPT.txt

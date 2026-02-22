@@ -748,6 +748,57 @@ export default function BoardPage() {
       {/* Bottom toolbar — hidden in interview mode (interview toolbar replaces it) */}
       {!interviewMode && <Toolbar tool={tool} onToolChange={setTool} />}
 
+      {/* Zoom controls */}
+      <div className="absolute bottom-6 right-6 z-20 flex items-center gap-1 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-xl shadow-lg border border-gray-200/50 dark:border-gray-700/50 px-1.5 py-1">
+        <button
+          type="button"
+          onClick={() => setViewport(v => ({ ...v, zoom: Math.max(0.1, v.zoom - 0.25) }))}
+          className="p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          title="Zoom out"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 8h10" /></svg>
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewport(v => ({ ...v, zoom: 1, x: 0, y: 0 }))}
+          className="px-2 py-1 text-[11px] font-mono font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors min-w-[44px] text-center"
+          title="Reset to 100%"
+        >
+          {Math.round(viewport.zoom * 100)}%
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewport(v => ({ ...v, zoom: Math.min(5, v.zoom + 0.25) }))}
+          className="p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          title="Zoom in"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 8h10M8 3v10" /></svg>
+        </button>
+        <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
+        <button
+          type="button"
+          onClick={() => {
+            if (elements.length === 0) { setViewport({ x: 0, y: 0, zoom: 1 }); return; }
+            const minX = Math.min(...elements.filter(e => e.type !== "connector").map(e => e.x));
+            const minY = Math.min(...elements.filter(e => e.type !== "connector").map(e => e.y));
+            const maxX = Math.max(...elements.filter(e => e.type !== "connector").map(e => e.x + e.width));
+            const maxY = Math.max(...elements.filter(e => e.type !== "connector").map(e => e.y + e.height));
+            const bw = maxX - minX || 100;
+            const bh = maxY - minY || 100;
+            const containerW = window.innerWidth - 80;
+            const containerH = window.innerHeight - 120;
+            const zoom = Math.min(containerW / bw, containerH / bh, 2) * 0.9;
+            const cx = minX + bw / 2;
+            const cy = minY + bh / 2;
+            setViewport({ x: containerW / 2 - cx * zoom, y: containerH / 2 - cy * zoom + 50, zoom });
+          }}
+          className="p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          title="Fit to screen"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M2 5V2h3M11 2h3v3M14 11v3h-3M5 14H2v-3" /></svg>
+        </button>
+      </div>
+
       {/* Canvas */}
       <Canvas
         elements={elements}

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import type { Peer } from "@/hooks/use-presence";
 import type { User } from "@supabase/supabase-js";
+import { getDisplayName, getInitials } from "@/lib/display-name";
 
 const COLORS = [
   "#EF4444",
@@ -15,12 +16,9 @@ const COLORS = [
   "#F97316",
 ];
 
-function displayName(email: string | null | undefined, isYou = false): string {
-  if (!email) return isYou ? "You" : "Anonymous";
+function peerDisplayName(email: string | null | undefined, isYou = false): string {
   if (isYou) return "You";
-  const beforeAt = email.split("@")[0];
-  if (beforeAt && beforeAt.length <= 20) return beforeAt;
-  return email.length > 24 ? `${email.slice(0, 21)}…` : email;
+  return getDisplayName({ email });
 }
 
 interface PresenceBarProps {
@@ -80,7 +78,7 @@ export function PresenceBar({ peers, user }: PresenceBarProps) {
               style={{ backgroundColor: u.color }}
               title={u.isYou ? `${u.email} (you)` : u.email || "User"}
             >
-              {u.email?.[0]?.toUpperCase() || "?"}
+              {getInitials(peerDisplayName(u.email, u.isYou))}
             </div>
           ))}
           {onlineList.length > 4 && (
@@ -115,11 +113,11 @@ export function PresenceBar({ peers, user }: PresenceBarProps) {
                   className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0 border-2 border-white dark:border-gray-900 shadow-sm"
                   style={{ backgroundColor: u.color }}
                 >
-                  {u.email?.[0]?.toUpperCase() || "?"}
+                  {getInitials(peerDisplayName(u.email, u.isYou))}
                 </div>
                 <div className="min-w-0 flex-1">
                   <span className="text-sm font-medium text-gray-800 dark:text-gray-200 block truncate">
-                    {displayName(u.email, u.isYou)}
+                    {peerDisplayName(u.email, u.isYou)}
                   </span>
                   {u.email && (
                     <span className="text-[11px] text-gray-400 dark:text-gray-500 block truncate">

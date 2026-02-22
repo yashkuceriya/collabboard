@@ -190,13 +190,32 @@ export function ChatPanel({ boardId, user, accessToken, onClose, interviewMode, 
           </div>
         )}
       </div>
-      <form onSubmit={onSubmit} className="px-4 py-3 border-t border-gray-200/50 dark:border-gray-800/50 shrink-0">
-        <div className="flex gap-2">
+      <div className="px-4 py-3 border-t border-gray-200/50 dark:border-gray-800/50 shrink-0 space-y-2">
+        {interviewMode && messages.length > 0 && !isLoading && (
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { label: "Complexity", prompt: "Analyze the time and space complexity of my current approach" },
+              { label: "Edge cases", prompt: "What edge cases should I consider for this problem?" },
+              { label: "Improve", prompt: "How can I improve my current solution?" },
+              { label: "Draw arch", prompt: "Help me draw the architecture diagram on the board" },
+            ].map((a) => (
+              <button
+                key={a.label}
+                type="button"
+                onClick={() => { sendMessage({ text: a.prompt }); }}
+                className="px-2 py-1 text-[10px] font-medium rounded-lg bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/40 border border-violet-200 dark:border-violet-800/50 transition-colors"
+              >
+                {a.label}
+              </button>
+            ))}
+          </div>
+        )}
+        <form onSubmit={onSubmit} className="flex gap-2">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask AI anything..."
+            placeholder={interviewMode ? "Ask about your design..." : "Ask AI anything..."}
             className="flex-1 px-3.5 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl text-sm bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-colors"
             disabled={isLoading || !user}
           />
@@ -210,8 +229,8 @@ export function ChatPanel({ boardId, user, accessToken, onClose, interviewMode, 
               <path d="M14 2l-5 12-2-5-5-2 12-5z" />
             </svg>
           </button>
-        </div>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }

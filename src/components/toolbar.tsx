@@ -85,42 +85,63 @@ function IconConnector() {
   );
 }
 
-const tools: { id: ToolId; label: string; shortcut: string; tooltip: string; Icon: () => React.JSX.Element }[] = [
-  { id: "select", label: "Select", shortcut: "V", tooltip: "Select and pan (drag empty space)", Icon: IconSelect },
-  { id: "sticky_note", label: "Sticky Note", shortcut: "N", tooltip: "Add a sticky note", Icon: IconStickyNote },
-  { id: "rectangle", label: "Rectangle", shortcut: "R", tooltip: "Draw a rectangle", Icon: IconRectangle },
-  { id: "circle", label: "Circle", shortcut: "O", tooltip: "Draw a circle", Icon: IconCircle },
-  { id: "line", label: "Line", shortcut: "L", tooltip: "Draw a line", Icon: IconLine },
-  { id: "text", label: "Text", shortcut: "T", tooltip: "Add text", Icon: IconText },
-  { id: "frame", label: "Frame", shortcut: "F", tooltip: "Draw a frame to group elements—move frame to move all inside", Icon: IconFrame },
-  { id: "connector", label: "Connect", shortcut: "A", tooltip: "Click two shapes to connect them with an arrow", Icon: IconConnector },
-  { id: "pen", label: "Draw", shortcut: "P", tooltip: "Freehand draw", Icon: IconPen },
-  { id: "eraser", label: "Eraser", shortcut: "E", tooltip: "Click an element to delete it", Icon: IconEraser },
+type ToolEntry = { id: ToolId; label: string; shortcut: string; tooltip: string; Icon: () => React.JSX.Element };
+type ToolGroup = ToolEntry[];
+
+const toolGroups: ToolGroup[] = [
+  [{ id: "select", label: "Select", shortcut: "V", tooltip: "Select and pan (drag empty space)", Icon: IconSelect }],
+  [
+    { id: "sticky_note", label: "Sticky", shortcut: "N", tooltip: "Add a sticky note", Icon: IconStickyNote },
+    { id: "rectangle", label: "Rect", shortcut: "R", tooltip: "Draw a rectangle", Icon: IconRectangle },
+    { id: "circle", label: "Circle", shortcut: "O", tooltip: "Draw a circle", Icon: IconCircle },
+    { id: "line", label: "Line", shortcut: "L", tooltip: "Draw a line", Icon: IconLine },
+  ],
+  [{ id: "text", label: "Text", shortcut: "T", tooltip: "Add text", Icon: IconText }],
+  [
+    { id: "frame", label: "Frame", shortcut: "F", tooltip: "Draw a frame to group elements", Icon: IconFrame },
+    { id: "connector", label: "Connect", shortcut: "A", tooltip: "Click two shapes to connect with arrow", Icon: IconConnector },
+  ],
+  [
+    { id: "pen", label: "Draw", shortcut: "P", tooltip: "Freehand draw", Icon: IconPen },
+    { id: "eraser", label: "Eraser", shortcut: "E", tooltip: "Click an element to delete it", Icon: IconEraser },
+  ],
 ];
+
+function ToolBtn({ t, active, onClick }: { t: ToolEntry; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`group flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-[13px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 relative active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-gray-900 ${
+        active
+          ? "bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-sm shadow-blue-500/25"
+          : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"
+      }`}
+      aria-label={t.tooltip}
+      title={`${t.tooltip} [${t.shortcut}]`}
+    >
+      <t.Icon />
+      <span className="hidden sm:inline">{t.label}</span>
+      <kbd className={`hidden sm:inline text-[10px] ml-0.5 px-1 py-0.5 rounded font-mono ${
+        active
+          ? "bg-white/20 text-white/80"
+          : "bg-gray-200/80 dark:bg-gray-700/80 text-gray-400 dark:text-gray-500"
+      }`}>{t.shortcut}</kbd>
+    </button>
+  );
+}
 
 export function Toolbar({ tool, onToolChange }: ToolbarProps) {
   return (
-    <div role="toolbar" aria-label="Drawing tools" className="absolute left-1/2 -translate-x-1/2 bottom-6 z-20 flex gap-0.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-2xl shadow-lg shadow-gray-200/50 dark:shadow-black/30 border border-gray-200/50 dark:border-gray-700/50 px-2 py-1.5">
-      {tools.map((t) => (
-        <button
-          key={t.id}
-          onClick={() => onToolChange(t.id)}
-          className={`group flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 relative active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-gray-900 ${
-            tool === t.id
-              ? "bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-sm shadow-blue-500/25"
-              : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"
-          }`}
-          aria-label={t.tooltip}
-          title={`${t.tooltip} [${t.shortcut}]`}
-        >
-          <t.Icon />
-          <span className="hidden sm:inline">{t.label}</span>
-          <kbd className={`hidden sm:inline text-[10px] ml-0.5 px-1 py-0.5 rounded font-mono ${
-            tool === t.id
-              ? "bg-white/20 text-white/80"
-              : "bg-gray-200/80 dark:bg-gray-700/80 text-gray-400 dark:text-gray-500"
-          }`}>{t.shortcut}</kbd>
-        </button>
+    <div role="toolbar" aria-label="Drawing tools" className="absolute left-1/2 -translate-x-1/2 bottom-6 z-20 flex items-center bg-white/95 dark:bg-gray-900/95 backdrop-blur-md rounded-2xl shadow-lg shadow-gray-200/50 dark:shadow-black/30 border border-gray-200/50 dark:border-gray-700/50 px-2 py-1.5">
+      {toolGroups.map((group, gi) => (
+        <div key={gi} className="flex items-center">
+          {gi > 0 && <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1" />}
+          <div className="flex gap-0.5">
+            {group.map((t) => (
+              <ToolBtn key={t.id} t={t} active={tool === t.id} onClick={() => onToolChange(t.id)} />
+            ))}
+          </div>
+        </div>
       ))}
     </div>
   );
