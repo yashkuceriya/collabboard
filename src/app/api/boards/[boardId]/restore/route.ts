@@ -40,7 +40,8 @@ export async function POST(
     return NextResponse.json({ error: "Snapshot not found" }, { status: 404 });
   }
 
-  const snapshot = snapshotRow.snapshot as Record<string, unknown>[];
+  const raw = snapshotRow as { id: string; board_id: string; snapshot: unknown };
+  const snapshot = raw.snapshot as Record<string, unknown>[];
   if (!Array.isArray(snapshot)) {
     return NextResponse.json({ error: "Invalid snapshot" }, { status: 400 });
   }
