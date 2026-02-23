@@ -622,13 +622,14 @@ export function Canvas({
           return el;
         }
       }
+      const connectorThreshold = Math.max(threshold, 24 / viewport.zoom);
+      for (let i = elements.length - 1; i >= 0; i--) {
+        const el = elements[i];
+        if (el.type !== "connector") continue;
+        const pts = getConnectorEndpoints(el, idToElement);
+        if (pts && distanceToSegment(x, y, pts.x1, pts.y1, pts.x2, pts.y2) <= connectorThreshold) return el;
+      }
       if (spatialIndex) {
-        for (let i = elements.length - 1; i >= 0; i--) {
-          const el = elements[i];
-          if (el.type !== "connector") continue;
-          const pts = getConnectorEndpoints(el, idToElement);
-          if (pts && distanceToSegment(x, y, pts.x1, pts.y1, pts.x2, pts.y2) <= threshold) return el;
-        }
         for (let i = elements.length - 1; i >= 0; i--) {
           const el = elements[i];
           if (el.type !== "freehand") continue;
@@ -2334,12 +2335,13 @@ export function Canvas({
         </div>
         );
       })()}
-      {/* Connector mini-toolbar — line type + delete for selected connector */}
+      {/* Connector mini-toolbar — color + line type + delete for selected connector */}
       {selectedId && !editingId && selectedElement && selectedElement.type === "connector" && (() => {
         const el = selectedElement;
         const pts = getConnectorEndpoints(el, idToElement);
         if (!pts) return null;
-        const anchor = worldToScreen((pts.x1 + pts.x2) / 2, (pts.y1 + pts.y2) / 2 - 20);
+        const midY = (pts.y1 + pts.y2) / 2 - 24;
+        const anchor = worldToScreen((pts.x1 + pts.x2) / 2, midY);
         const connProps = el.properties as Record<string, string> | undefined;
         const currentRoute = (connProps?.route || "curved") as "straight" | "orthogonal" | "curved";
         const currentThickness = (connProps?.thickness || "medium") as "thin" | "medium" | "thick";
@@ -2347,14 +2349,30 @@ export function Canvas({
           const existingProps = (el.properties as Record<string, unknown>) || {};
           onUpdate(el.id, { properties: { ...existingProps, ...patch } as BoardElement["properties"] });
         };
+        const CONNECTOR_COLORS = ["#3B82F6", "#EF4444", "#10B981", "#F59E0B", "#8B5CF6", "#6B7280", "#EC4899", "#06B6D4"];
         const routeBtn = "px-2 py-1 text-xs font-medium rounded-md border transition-colors";
         const routeActive = "bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300";
         const routeInactive = "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700";
         return (
           <div
-            className="absolute z-20 flex items-center gap-1.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm px-2 py-1.5 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700"
-            style={{ left: anchor.x, top: anchor.y, transform: "translate(-50%, -100%)" }}
+            className="absolute z-40 pointer-events-auto flex flex-wrap items-center gap-1.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm px-2 py-1.5 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700"
+            style={{ left: anchor.x, top: anchor.y - 4, transform: "translate(-50%, -100%)" }}
           >
+            <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400 w-full py-0.5">Color</span>
+            <div className="flex gap-0.5">
+              {CONNECTOR_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onUpdate(el.id, { color: c }); }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  title={c}
+                  className={`rounded-full border-2 w-5 h-5 flex-shrink-0 ${(el.color || "#3B82F6").toLowerCase() === c.toLowerCase() ? "border-blue-500 dark:border-blue-400 scale-110" : "border-gray-300 dark:border-gray-600 hover:scale-105"}`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+            <div className="w-full border-t border-gray-200 dark:border-gray-700 my-0.5" />
             {(["straight", "orthogonal", "curved"] as const).map((route) => (
               <button
                 key={route}
@@ -2366,7 +2384,6 @@ export function Canvas({
                 {route === "orthogonal" ? "Elbow" : route.charAt(0).toUpperCase() + route.slice(1)}
               </button>
             ))}
-            <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
             {(["thin", "medium", "thick"] as const).map((t) => (
               <button
                 key={t}
@@ -2379,12 +2396,13 @@ export function Canvas({
                 <svg width="16" height="10" viewBox="0 0 16 10"><line x1="0" y1="5" x2="16" y2="5" stroke="currentColor" strokeWidth={t === "thin" ? 1 : t === "medium" ? 2 : 4} strokeLinecap="round" /></svg>
               </button>
             ))}
+            <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
             <button
               type="button"
-              onClick={() => { onDelete(selectedId!); setSelectedId(null); }}
+              onClick={(e) => { e.stopPropagation(); onDelete(selectedId!); setSelectedId(null); }}
               onMouseDown={(e) => e.stopPropagation()}
               className="px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-md border border-red-200 dark:border-red-800"
-              title="Delete connector"
+              title="Delete connector (or press Delete/Backspace)"
             >
               Delete
             </button>
