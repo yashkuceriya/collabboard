@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { useRouter, usePathname } from "next/navigation";
 import type { Board } from "@/lib/types/database";
@@ -10,6 +11,48 @@ import { UserMenu } from "@/components/user-menu";
 import { BoardPreview } from "@/components/board-preview";
 import { ShareBoardModal } from "@/components/share-board-modal";
 import { getRecentBoardIds, removeRecentBoard, clearRecentBoards } from "@/lib/recent-boards";
+
+function KanbanIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="6" height="6" rx="1" />
+      <rect x="15" y="3" width="6" height="6" rx="1" />
+      <rect x="3" y="15" width="6" height="6" rx="1" />
+      <rect x="15" y="15" width="6" height="6" rx="1" />
+    </svg>
+  );
+}
+function SWOTIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2L2 12l10 10 10-10L12 2z" />
+      <path d="M12 6v12M6 12h12" />
+    </svg>
+  );
+}
+function RetroIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+    </svg>
+  );
+}
+function JourneyIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 12h14M12 5l7 7-7 7" />
+    </svg>
+  );
+}
+function ProsConsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="18" rx="1" />
+      <rect x="14" y="3" width="7" height="18" rx="1" />
+    </svg>
+  );
+}
 
 export type BoardWithAccess = Board & { access: "owner" | "shared" };
 
@@ -258,16 +301,16 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50/30 dark:from-gray-950 dark:to-gray-900">
-      <header className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <header className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 px-6 py-3.5 flex items-center justify-between sticky top-0 z-10">
+        <Link href="/dashboard" className="flex items-center gap-2.5 rounded-lg -m-1 p-1 hover:bg-gray-100/80 dark:hover:bg-gray-800/80 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm shadow-blue-500/20">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="3" />
               <path d="M9 8h6M8 12h8M9 16h6" />
             </svg>
           </div>
-          <h1 className="text-lg font-bold text-gray-800 dark:text-gray-100 tracking-tight">CollabBoard</h1>
-        </div>
+          <span className="text-lg font-bold text-gray-800 dark:text-gray-100 tracking-tight">CollabBoard</span>
+        </Link>
         <div className="flex items-center gap-4">
           <ThemeSwitcher />
           <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
@@ -275,72 +318,74 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
+      <main className="max-w-6xl mx-auto px-6 py-10">
         {createError && (
-          <div className="mb-4 px-4 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300">
+          <div className="mb-4 px-4 py-2.5 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300">
             {createError}
           </div>
         )}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">Boards</h2>
-            <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+            <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">Boards</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5">
               {ownedCount} owned · {sharedCount} shared with you
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5 shrink-0">
             <button
               onClick={() => createBoard(false)}
-              className="px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-lg text-sm font-medium transition-all shadow-sm shadow-blue-500/25 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
+              className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 active:scale-[0.98] text-white rounded-xl text-sm font-semibold transition-all shadow-md shadow-blue-500/25 hover:shadow-lg hover:shadow-blue-500/30 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900"
             >
               + New Board
             </button>
             <button
               onClick={() => createBoard(true)}
-              className="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-lg text-sm font-medium transition-all shadow-sm shadow-emerald-500/25 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2"
+              className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 active:scale-[0.98] text-white rounded-xl text-sm font-semibold transition-all shadow-md shadow-emerald-500/25 hover:shadow-lg hover:shadow-emerald-500/30 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900"
             >
               + Interview Board
             </button>
           </div>
         </div>
 
-        {/* Start from a template */}
-        <div className="mb-8">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">Start from a template</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+        {/* Templates */}
+        <section className="mb-10" aria-label="Start from a template">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500 mb-4">Start from a template</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {[
-              { id: "kanban", label: "Kanban", desc: "To Do, In Progress, Done", icon: "▦" },
-              { id: "swot", label: "SWOT", desc: "Strengths, Weaknesses, Opportunities, Threats", icon: "◇" },
-              { id: "retrospective", label: "Retrospective", desc: "What went well, what to improve", icon: "↻" },
-              { id: "user_journey", label: "User Journey", desc: "Map the user experience flow", icon: "→" },
-              { id: "pros_cons", label: "Pros & Cons", desc: "Weigh options side by side", icon: "⚖" },
+              { id: "kanban", label: "Kanban", desc: "To Do, In Progress, Done", Icon: KanbanIcon },
+              { id: "swot", label: "SWOT", desc: "Strengths, Weaknesses, …", Icon: SWOTIcon },
+              { id: "retrospective", label: "Retrospective", desc: "What went well, what to improve", Icon: RetroIcon },
+              { id: "user_journey", label: "User Journey", desc: "Map the user experience flow", Icon: JourneyIcon },
+              { id: "pros_cons", label: "Pros & Cons", desc: "Weigh options side by side", Icon: ProsConsIcon },
             ].map((t) => (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => createBoard(false, t.id)}
-                className="text-left p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/80 hover:bg-gray-50 dark:hover:bg-gray-800 hover:border-blue-200 dark:hover:border-blue-800 transition-colors"
+                className="group text-left p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/80 hover:bg-gray-50 dark:hover:bg-gray-800 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900"
               >
-                <span className="text-lg font-bold text-gray-400 dark:text-gray-500 block mb-1">{t.icon}</span>
-                <span className="text-sm font-medium text-gray-900 dark:text-gray-100 block">{t.label}</span>
-                <span className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{t.desc}</span>
+                <span className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700/80 text-gray-500 dark:text-gray-400 group-hover:bg-blue-50 dark:group-hover:bg-blue-900/30 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors mb-3">
+                  <t.Icon className="w-5 h-5" />
+                </span>
+                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 block">{t.label}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{t.desc}</span>
               </button>
             ))}
           </div>
-        </div>
+        </section>
 
         {/* Tabs + Search */}
-        <div className="flex items-center justify-between mb-5 gap-4">
-          <div className="flex gap-1 bg-gray-100 dark:bg-gray-800/60 rounded-lg p-1">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div className="flex flex-wrap gap-1 bg-gray-100 dark:bg-gray-800/60 rounded-xl p-1.5 min-h-[42px]">
             <button
               onClick={() => setActiveTab("all")}
-              className={`px-3.5 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === "all" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
+              className={`px-3.5 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === "all" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
             >
               All Boards
             </button>
             <button
               onClick={() => setActiveTab("starred")}
-              className={`px-3.5 py-1.5 text-sm font-medium rounded-md transition-all flex items-center gap-1.5 ${activeTab === "starred" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
+              className={`px-3.5 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-1.5 ${activeTab === "starred" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill={activeTab === "starred" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
@@ -349,7 +394,7 @@ export default function DashboardPage() {
             </button>
             <button
               onClick={() => setActiveTab("interview")}
-              className={`px-3.5 py-1.5 text-sm font-medium rounded-md transition-all flex items-center gap-1.5 ${activeTab === "interview" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
+              className={`px-3.5 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-1.5 ${activeTab === "interview" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="2" y="3" width="20" height="14" rx="2" />
@@ -359,7 +404,7 @@ export default function DashboardPage() {
             </button>
             <button
               onClick={() => setActiveTab("recent")}
-              className={`px-3.5 py-1.5 text-sm font-medium rounded-md transition-all flex items-center gap-1.5 ${activeTab === "recent" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
+              className={`px-3.5 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-1.5 ${activeTab === "recent" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" />
@@ -368,13 +413,13 @@ export default function DashboardPage() {
               Recent{recentCount > 0 && ` (${recentCount})`}
             </button>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 p-0.5">
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/50 p-0.5">
               <button
                 type="button"
                 onClick={() => setViewModePersisted("grid")}
                 title="Grid view"
-                className={`p-1.5 rounded-md transition-all ${viewMode === "grid" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
+                className={`p-2 rounded-lg transition-all ${viewMode === "grid" ? "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="3" width="7" height="7" rx="1" />
@@ -387,7 +432,7 @@ export default function DashboardPage() {
                 type="button"
                 onClick={() => setViewModePersisted("list")}
                 title="List view"
-                className={`p-1.5 rounded-md transition-all ${viewMode === "list" ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
+                className={`p-2 rounded-lg transition-all ${viewMode === "list" ? "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100" : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="8" y1="6" x2="21" y2="6" />
@@ -403,23 +448,21 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={handleClearRecent}
-                className="text-xs font-medium text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300"
+                className="text-xs font-medium text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:underline"
               >
                 Clear recent
               </button>
             )}
             <div className="relative">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500">
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search boards..."
-              className="pl-9 pr-3 py-2 w-56 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
-            />
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" aria-hidden />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search boards..."
+                aria-label="Search boards"
+                className="pl-9 pr-3 py-2.5 w-56 text-sm border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
+              />
             </div>
           </div>
         </div>
@@ -560,7 +603,7 @@ export default function DashboardPage() {
               return (
                 <div
                   key={board.id}
-                  className="group bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-800/60 rounded-xl overflow-hidden text-left shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
+                  className="group bg-white dark:bg-gray-900 border border-gray-200/60 dark:border-gray-800/60 rounded-xl overflow-hidden text-left shadow-sm hover:shadow-lg hover:shadow-gray-200/50 dark:hover:shadow-gray-900/50 hover:-translate-y-0.5 hover:border-gray-300 dark:hover:border-gray-700 transition-all duration-200 cursor-pointer"
                   onClick={() => {
                     if (editingBoardId !== board.id) router.push(`/board/${board.id}`);
                   }}
