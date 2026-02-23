@@ -59,7 +59,6 @@ const CURSOR_COLORS = [
 ];
 
 type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-const HANDLE_SIZE_WORLD = 8;
 /** Hit area for handles (larger than visual for easier grabbing) */
 const HANDLE_HIT_SLOP = 8;
 const MIN_SIZE = 24;

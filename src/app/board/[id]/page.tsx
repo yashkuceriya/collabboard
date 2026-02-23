@@ -20,6 +20,7 @@ import { usePresence } from "@/hooks/use-presence";
 import { useBoardChat } from "@/hooks/use-board-chat";
 import { sortElementsByOrder } from "@/lib/sort-elements";
 import { addRecentBoard } from "@/lib/recent-boards";
+import { getTemplatePrompt } from "@/lib/templates";
 
 export default function BoardPage() {
   const params = useParams();
@@ -47,14 +48,6 @@ export default function BoardPage() {
   const searchParams = useSearchParams();
   const perfMode = searchParams.get("perf") === "1";
   const versionSnapshotTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const TEMPLATE_PROMPTS: Record<string, string> = {
-    kanban: "Create a kanban board with To Do, In Progress, and Done columns.",
-    swot: "Create a SWOT analysis with four quadrants: Strengths, Weaknesses, Opportunities, Threats.",
-    retrospective: "Set up a retrospective board with What went well, What to improve, and Action items.",
-    user_journey: "Build a user journey map showing the user experience flow.",
-    pros_cons: "Create a pros and cons grid to weigh options side by side.",
-  };
 
   const scheduleVersionSnapshot = useCallback(() => {
     if (versionSnapshotTimeoutRef.current) clearTimeout(versionSnapshotTimeoutRef.current);
@@ -95,9 +88,11 @@ export default function BoardPage() {
   const templateParam = searchParams.get("template");
   useEffect(() => {
     if (!templateParam || !user) return;
-    const prompt = TEMPLATE_PROMPTS[templateParam] || `Create a ${templateParam.replace(/_/g, " ")} board.`;
-    setInitialAiPrompt(prompt);
-    setShowChatPanel(true);
+    const prompt = getTemplatePrompt(templateParam);
+    queueMicrotask(() => {
+      setInitialAiPrompt(prompt);
+      setShowChatPanel(true);
+    });
     const u = new URL(window.location.href);
     u.searchParams.delete("template");
     router.replace(u.pathname + u.search, { scroll: false });
