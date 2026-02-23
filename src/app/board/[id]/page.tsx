@@ -173,7 +173,7 @@ export default function BoardPage() {
     await supabase.from("boards").update({ name: trimmed } as never).eq("id", boardId);
   }
 
-  // Re-fetch all elements from DB (used after AI tool calls to ensure server-created objects appear)
+  // Re-fetch all elements from DB (used after AI tool calls so board reflects server state, e.g. after clear)
   const refreshElements = useCallback(async () => {
     const { data } = await supabase
       .from("board_elements")
@@ -181,11 +181,7 @@ export default function BoardPage() {
       .eq("board_id", boardId)
       .order("created_at", { ascending: true });
     const fromDb = (data as BoardElement[]) || [];
-    setElements((prev) => {
-      const idsFromDb = new Set(fromDb.map((e) => e.id));
-      const fromRealtime = prev.filter((e) => !idsFromDb.has(e.id));
-      return sortElementsByOrder([...fromDb, ...fromRealtime]);
-    });
+    setElements(sortElementsByOrder(fromDb));
   }, [boardId]);
 
   // Real-time element sync (postgres_changes + broadcast fallback for add/delete)
@@ -334,7 +330,7 @@ export default function BoardPage() {
     [boardId, user, broadcastElement, scheduleVersionSnapshot]
   );
 
-  // Create freehand stroke (pen tool) — points in world coordinates
+  // Create freehand stroke (pen tool) — store points in local coords (relative to bbox min) so moving el.x, el.y moves the stroke
   const createFreehand = useCallback(
     async (points: { x: number; y: number }[], strokeColor = "#1a1a1a"): Promise<string | null> => {
       if (!user || points.length < 2) return null;
@@ -346,6 +342,7 @@ export default function BoardPage() {
       const maxY = Math.max(...ys);
       const width = Math.max(maxX - minX, 2);
       const height = Math.max(maxY - minY, 2);
+      const localPoints = points.map((p) => ({ x: p.x - minX, y: p.y - minY }));
       const tempId = `temp-${Date.now()}`;
       const now = new Date().toISOString();
       const tempEl: BoardElement = {
@@ -358,7 +355,7 @@ export default function BoardPage() {
         height,
         color: strokeColor,
         text: "",
-        properties: { points } as BoardElement["properties"],
+        properties: { points: localPoints } as BoardElement["properties"],
         created_by: user.id,
         updated_at: now,
         created_at: now,
@@ -375,7 +372,7 @@ export default function BoardPage() {
           height,
           color: strokeColor,
           text: "",
-          properties: { points },
+          properties: { points: localPoints },
           created_by: user.id,
         } as never)
         .select("*")
@@ -739,6 +736,19 @@ export default function BoardPage() {
           )}
         </div>
         <div className="flex items-center gap-3">
+          {!interviewMode && elements.length >= 1 && (
+            <button
+              type="button"
+              onClick={clearBoardWithConfirm}
+              title="Clear entire board"
+              className="text-sm px-3 py-1.5 rounded-lg font-medium text-amber-700 dark:text-amber-300 hover:text-amber-800 dark:hover:text-amber-200 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-800/50 flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-1"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6" />
+              </svg>
+              Clear board
+            </button>
+          )}
           {user && boardOwnerId === user.id && (
             <button
               type="button"

@@ -218,6 +218,14 @@ function buildSpatialIndex(elements: BoardElement[]): Map<string, BoardElement[]
 
 const CONNECTABLE_TYPES = new Set(["sticky_note", "rectangle", "circle", "text", "frame"]);
 
+function freehandPointsAreLocal(el: BoardElement): boolean {
+  const pts = (el.properties as { points?: { x: number; y: number }[] })?.points;
+  if (!pts || pts.length === 0) return true;
+  const p = pts[0];
+  const tol = 20;
+  return p.x >= -tol && p.x <= el.width + tol && p.y >= -tol && p.y <= el.height + tol;
+}
+
 function getShapeAnchors(el: BoardElement): { x: number; y: number }[] {
   if (!CONNECTABLE_TYPES.has(el.type)) return [];
   const cx = el.x + el.width / 2;
@@ -589,9 +597,14 @@ export function Canvas({
             if (pointInRotatedBox(x, y, el)) return el;
           } else {
             const pts = (el.properties as { points?: { x: number; y: number }[] })?.points;
+            const local = freehandPointsAreLocal(el);
             if (pts && pts.length >= 2) {
               for (let j = 0; j < pts.length - 1; j++) {
-                if (distanceToSegment(x, y, pts[j].x, pts[j].y, pts[j + 1].x, pts[j + 1].y) <= threshold) return el;
+                const ax = local ? el.x + pts[j].x : pts[j].x;
+                const ay = local ? el.y + pts[j].y : pts[j].y;
+                const bx = local ? el.x + pts[j + 1].x : pts[j + 1].x;
+                const by = local ? el.y + pts[j + 1].y : pts[j + 1].y;
+                if (distanceToSegment(x, y, ax, ay, bx, by) <= threshold) return el;
               }
             }
           }
@@ -610,11 +623,28 @@ export function Canvas({
         }
       }
       if (spatialIndex) {
-      for (let i = elements.length - 1; i >= 0; i--) {
-        const el = elements[i];
+        for (let i = elements.length - 1; i >= 0; i--) {
+          const el = elements[i];
           if (el.type !== "connector") continue;
           const pts = getConnectorEndpoints(el, idToElement);
           if (pts && distanceToSegment(x, y, pts.x1, pts.y1, pts.x2, pts.y2) <= threshold) return el;
+        }
+        for (let i = elements.length - 1; i >= 0; i--) {
+          const el = elements[i];
+          if (el.type !== "freehand") continue;
+          const inBox = x >= el.x && x <= el.x + el.width && y >= el.y && y <= el.y + el.height;
+          if (!inBox) continue;
+          const pts = (el.properties as { points?: { x: number; y: number }[] })?.points;
+          const local = freehandPointsAreLocal(el);
+          if (pts && pts.length >= 2) {
+            for (let j = 0; j < pts.length - 1; j++) {
+              const ax = local ? el.x + pts[j].x : pts[j].x;
+              const ay = local ? el.y + pts[j].y : pts[j].y;
+              const bx = local ? el.x + pts[j + 1].x : pts[j + 1].x;
+              const by = local ? el.y + pts[j + 1].y : pts[j + 1].y;
+              if (distanceToSegment(x, y, ax, ay, bx, by) <= threshold) return el;
+            }
+          }
         }
       }
       return null;
@@ -721,15 +751,16 @@ export function Canvas({
       if (useLOD) {
         if (el.type === "freehand") {
           const pts = (el.properties as { points?: { x: number; y: number }[] })?.points;
+          const local = freehandPointsAreLocal(el);
           if (pts && pts.length >= 2) {
             ctx.strokeStyle = el.color;
             ctx.lineWidth = Math.max(2 / effectiveViewport.zoom, 2);
             ctx.lineCap = "round";
             ctx.lineJoin = "round";
             ctx.beginPath();
-            ctx.moveTo(pts[0].x, pts[0].y);
-            for (let i = 1; i < pts.length; i += Math.max(1, Math.floor(pts.length / 50))) ctx.lineTo(pts[i].x, pts[i].y);
-            if (pts.length > 1) ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+            ctx.moveTo(local ? x + pts[0].x : pts[0].x, local ? y + pts[0].y : pts[0].y);
+            for (let i = 1; i < pts.length; i += Math.max(1, Math.floor(pts.length / 50))) ctx.lineTo(local ? x + pts[i].x : pts[i].x, local ? y + pts[i].y : pts[i].y);
+            if (pts.length > 1) ctx.lineTo(local ? x + pts[pts.length - 1].x : pts[pts.length - 1].x, local ? y + pts[pts.length - 1].y : pts[pts.length - 1].y);
             ctx.stroke();
           }
         } else {
@@ -882,14 +913,15 @@ export function Canvas({
         }
       } else if (el.type === "freehand") {
         const pts = (el.properties as { points?: { x: number; y: number }[] })?.points;
+        const local = freehandPointsAreLocal(el);
         if (pts && pts.length >= 2) {
           ctx.strokeStyle = el.color;
           ctx.lineWidth = Math.max(2 / effectiveViewport.zoom, 2);
           ctx.lineCap = "round";
           ctx.lineJoin = "round";
           ctx.beginPath();
-          ctx.moveTo(pts[0].x, pts[0].y);
-          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+          ctx.moveTo(local ? x + pts[0].x : pts[0].x, local ? y + pts[0].y : pts[0].y);
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(local ? x + pts[i].x : pts[i].x, local ? y + pts[i].y : pts[i].y);
           ctx.stroke();
         }
       }
@@ -1665,7 +1697,7 @@ export function Canvas({
           candidates = elements;
         }
         const hit = candidates.filter(
-          (el) => el.type !== "connector" && el.type !== "freehand" && el.x < mx2 && el.x + el.width > mx1 && el.y < my2 && el.y + el.height > my1
+          (el) => el.type !== "connector" && el.x < mx2 && el.x + el.width > mx1 && el.y < my2 && el.y + el.height > my1
         );
         if (hit.length > 0) {
           setSelectedIds(new Set(hit.map((el) => el.id)));
