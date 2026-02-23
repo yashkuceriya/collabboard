@@ -104,7 +104,7 @@ export function ChatPanel({ boardId, user, accessToken, onClose, interviewMode, 
     const nowReady = status === "ready";
     prevStatusRef.current = status;
     if (wasStreaming && nowReady) {
-      if (onAiFinished) onAiFinished();
+      if (onAiFinished) setTimeout(() => onAiFinished(), 150);
       const lastSaved = lastSavedCountRef.current;
       if (messages.length > lastSaved && accessToken) {
         const toSave = messages.slice(lastSaved).map((m) => ({
