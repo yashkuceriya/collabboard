@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import type { User } from "@supabase/supabase-js";
-import { getDisplayName, getInitials, getAvatarDisplay } from "@/lib/display-name";
+import { AppHeader } from "@/components/app-header";
+import { getDisplayName, getInitials } from "@/lib/display-name";
 
 const AVATAR_COLORS = [
   "#EF4444",
@@ -53,6 +53,11 @@ export default function ProfilePage() {
     return () => { cancelled = true; };
   }, [router]);
 
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    router.push("/auth");
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!user) return;
@@ -95,61 +100,55 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50/30 dark:from-gray-950 dark:to-gray-900">
-      <header className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
-        <div className="flex items-center gap-2.5">
-          <Link href="/dashboard" className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
-            ← Boards
-          </Link>
-        </div>
-      </header>
+      <AppHeader variant="profile" user={user} onSignOut={handleSignOut} />
 
       <main className="max-w-md mx-auto px-6 py-10">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">Profile</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 mb-6">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">Profile</h1>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5 mb-8">
           Optionally add your name. It will be used for your avatar on boards.
         </p>
 
         <form onSubmit={handleSave} className="space-y-5">
           {error && (
-            <div className="px-4 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300">
+            <div className="px-4 py-2.5 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300">
               {error}
             </div>
           )}
           {success && (
-            <div className="px-4 py-2 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-sm text-green-700 dark:text-green-300">
+            <div className="px-4 py-2.5 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-sm text-green-700 dark:text-green-300">
               {success}
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Email</label>
             <input
               type="email"
               readOnly
               value={user?.email ?? ""}
-              className="w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-sm"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">First name</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">First name</label>
             <input
               type="text"
               placeholder="Optional"
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Last name</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Last name</label>
             <input
               type="text"
               placeholder="Optional"
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
             />
           </div>
 
@@ -183,20 +182,20 @@ export default function ProfilePage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Avatar emoji (optional)</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Avatar emoji (optional)</label>
             <input
               type="text"
               placeholder="e.g. 😀 or leave blank for initial"
               value={avatarEmoji}
               onChange={(e) => setAvatarEmoji(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors"
             />
           </div>
 
           <button
             type="submit"
             disabled={saving}
-            className="w-full py-3 px-4 rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:pointer-events-none text-white font-medium transition-colors"
+            className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-semibold shadow-md shadow-emerald-500/25 disabled:opacity-50 disabled:pointer-events-none transition-all focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2"
           >
             {saving ? "Saving..." : "Save"}
           </button>

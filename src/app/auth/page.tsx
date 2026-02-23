@@ -82,11 +82,11 @@ export default function AuthPage() {
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-950 dark:via-gray-950 dark:to-gray-900 px-4 relative overflow-hidden">
       {/* Animated floating shapes */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
-        <div className="absolute w-72 h-72 rounded-full bg-blue-200/30 dark:bg-blue-900/20 -top-20 -left-20 animate-[float_20s_ease-in-out_infinite]" />
-        <div className="absolute w-48 h-48 rounded-2xl bg-indigo-200/25 dark:bg-indigo-900/15 top-1/4 right-10 rotate-12 animate-[float_25s_ease-in-out_infinite_reverse]" />
-        <div className="absolute w-32 h-32 rounded-full bg-purple-200/20 dark:bg-purple-900/10 bottom-32 left-1/4 animate-[float_18s_ease-in-out_infinite_2s]" />
-        <div className="absolute w-56 h-56 rounded-3xl bg-sky-200/20 dark:bg-sky-900/10 -bottom-10 right-1/4 -rotate-6 animate-[float_22s_ease-in-out_infinite_reverse_1s]" />
-        <div className="absolute w-20 h-20 rounded-lg bg-amber-200/20 dark:bg-amber-900/10 top-20 left-1/3 rotate-45 animate-[float_15s_ease-in-out_infinite_3s]" />
+        <div className="absolute w-72 h-72 rounded-full bg-blue-200/30 dark:bg-blue-900/20 -top-20 -left-20 animate-float" />
+        <div className="absolute w-48 h-48 rounded-2xl bg-indigo-200/25 dark:bg-indigo-900/15 top-1/4 right-10 rotate-12 animate-float-25-reverse" />
+        <div className="absolute w-32 h-32 rounded-full bg-purple-200/20 dark:bg-purple-900/10 bottom-32 left-1/4 animate-float-18-delay-2" />
+        <div className="absolute w-56 h-56 rounded-3xl bg-sky-200/20 dark:bg-sky-900/10 -bottom-10 right-1/4 -rotate-6 animate-float-22-reverse-delay-1" />
+        <div className="absolute w-20 h-20 rounded-lg bg-amber-200/20 dark:bg-amber-900/10 top-20 left-1/3 rotate-45 animate-float-15-delay-3" />
       </div>
 
       <div className="w-full max-w-sm relative z-10">
@@ -226,14 +226,6 @@ export default function AuthPage() {
       <p className="absolute bottom-4 text-[11px] text-gray-400 dark:text-gray-600">
         Built with Next.js, Supabase &amp; OpenAI
       </p>
-
-      <style jsx>{`
-        @keyframes float {
-          0%, 100% { transform: translateY(0) rotate(0deg); }
-          33% { transform: translateY(-20px) rotate(2deg); }
-          66% { transform: translateY(10px) rotate(-1deg); }
-        }
-      `}</style>
     </div>
   );
 }
